@@ -1,0 +1,398 @@
+{
+  "name": "Tool - Reschedule Appointment",
+  "nodes": [
+    {
+      "parameters": {
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "appointment_id"
+            },
+            {
+              "name": "new_date"
+            },
+            {
+              "name": "new_time"
+            }
+          ]
+        }
+      },
+      "id": "5bd28238-16bf-4c59-bcf3-732bd70c4d29",
+      "name": "Execute Workflow Trigger",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -1120,
+        96
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "1tLS1N4K93xGHwfs"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "appointment_id",
+              "keyValue": "={{ $json.appointment_id }}"
+            }
+          ]
+        },
+        "returnAll": true
+      },
+      "id": "8195e920-4287-43ea-9e69-7f40bf6699f6",
+      "name": "Get Appointment",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        -896,
+        96
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "1tLS1N4K93xGHwfs"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "doctor_id",
+              "keyValue": "={{ $json.doctor_id }}"
+            },
+            {
+              "keyName": "appointment_date",
+              "keyValue": "={{ $('Execute Workflow Trigger').item.json.new_date }}"
+            },
+            {
+              "keyName": "status",
+              "keyValue": "booked"
+            },
+            {
+              "keyName": "appointment_id",
+              "condition": "neq",
+              "keyValue": "={{ $('Execute Workflow Trigger').item.json.appointment_id }}"
+            }
+          ]
+        },
+        "returnAll": true
+      },
+      "id": "11a54124-ecc1-422b-bc89-4e2f5579e8a4",
+      "name": "Get Conflicting Appointment",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        -672,
+        96
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// --- Clinic time formatting (presentation layer only; DB stores HH:mm) ---\nconst CLINIC_TIMEZONE = 'Asia/Karachi';\n\nfunction parseClinicTime(raw) {\n  if (raw == null || raw === '') return null;\n  const s = String(raw).trim().replace(/\\s+/g, ' ');\n  const zone = CLINIC_TIMEZONE;\n  const formats = ['HH:mm', 'H:mm', 'HH:mm:ss', 'H:mm:ss', 'h:mm a', 'h:mma', 'hh:mm a', 'hh:mma', 'h a', 'ha', 'h:mm:ss a'];\n  for (const fmt of formats) {\n    const dt = DateTime.fromFormat(s, fmt, { zone, locale: 'en' });\n    if (dt.isValid) return dt;\n  }\n  const iso = DateTime.fromISO(s, { zone });\n  if (iso.isValid && /T|\\d:\\d/.test(s)) return iso;\n  return null;\n}\n\nfunction toStoredTime(raw) {\n  const dt = parseClinicTime(raw);\n  return dt ? dt.toFormat('HH:mm') : null;\n}\n\nfunction formatTime12h(raw) {\n  const dt = parseClinicTime(raw);\n  if (!dt) return raw;\n  return dt.setLocale('en-US').toFormat('h:mm a').replace(/\\b(am|pm)\\b/gi, (m) => m.toUpperCase());\n}\n\nfunction clinicNow() {\n  return DateTime.now().setZone(CLINIC_TIMEZONE);\n}\n\nfunction formatDateDisplay(isoOrDate) {\n  const raw = String(isoOrDate || '').trim();\n  const datePart = raw.includes('T') ? raw.split('T')[0] : raw.slice(0, 10);\n  const dt = DateTime.fromISO(datePart, { zone: CLINIC_TIMEZONE });\n  return dt.isValid ? dt.toFormat('MMMM d, yyyy') : raw;\n}\n// --- end clinic time formatting ---\n\nconst apptItems = $('Get Appointment').all();\nconst appt = apptItems[0] ? apptItems[0].json : null;\nconst doctorItems = $('Get Doctor').all();\nconst doctor = doctorItems[0] ? doctorItems[0].json : null;\nconst trigger = $('Execute Workflow Trigger').first().json;\n\nif (!appt || !appt.appointment_id) {\n  return [{ json: { canReschedule: false, message: 'No appointment found with that ID. Please double-check and try again.' } }];\n}\nif (appt.status === 'cancelled') {\n  return [{ json: { canReschedule: false, message: 'This appointment has been cancelled and cannot be rescheduled.' } }];\n}\nif (!doctor || !doctor.doctor_id) {\n  return [{ json: { canReschedule: false, message: 'Could not find the doctor for this appointment. Please contact the clinic.' } }];\n}\n\nconst doctorLabel = doctor.doctor_name || appt.doctor_name;\nconst workingDays = (doctor.working_days || '').split(',').map(d => d.trim()).filter(Boolean);\nconst dt = DateTime.fromISO(trigger.new_date, { zone: CLINIC_TIMEZONE });\nif (!dt.isValid) {\n  return [{ json: { canReschedule: false, message: 'The date ' + trigger.new_date + ' is not valid. Please use YYYY-MM-DD format.' } }];\n}\nconst weekdayMap = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];\nconst weekdayName = weekdayMap[dt.weekday - 1];\nif (!workingDays.includes(weekdayName)) {\n  return [{ json: { canReschedule: false, message: doctorLabel + ' does not work on ' + weekdayName + '. Working days are: ' + workingDays.join(', ') + '.' } }];\n}\n\nconst newTime = toStoredTime(trigger.new_time);\nif (!newTime) {\n  return [{ json: { canReschedule: false, message: 'The time ' + trigger.new_time + ' is not valid. Please choose a slot from the available list.' } }];\n}\n\nconst [startStr, endStr] = (doctor.working_hours || '09:00-17:00').split('-');\nconst duration = doctor.slot_duration_minutes || 30;\nlet slotCursor = DateTime.fromFormat(startStr.trim(), 'HH:mm', { zone: CLINIC_TIMEZONE });\nconst end = DateTime.fromFormat(endStr.trim(), 'HH:mm', { zone: CLINIC_TIMEZONE });\nconst allSlots = [];\nwhile (slotCursor.isValid && end.isValid && slotCursor < end) {\n  allSlots.push(slotCursor.toFormat('HH:mm'));\n  slotCursor = slotCursor.plus({ minutes: duration });\n}\nif (!allSlots.includes(newTime)) {\n  return [{ json: { canReschedule: false, message: formatTime12h(newTime) + ' is not a valid slot for ' + doctorLabel + '. Please choose an available time from CheckDoctorAvailability.' } }];\n}\n\nconst conflictItems = $input.all().filter(i => i.json && i.json.appointment_id && toStoredTime(i.json.appointment_time) === newTime);\nif (conflictItems.length > 0) {\n  const dateDisplay = formatDateDisplay(trigger.new_date);\n  return [{ json: { canReschedule: false, message: doctorLabel + ' is already booked at ' + formatTime12h(newTime) + ' on ' + dateDisplay + '. Please choose another slot.' } }];\n}\n\nreturn [{ json: {\n  canReschedule: true,\n  appointment_id: appt.appointment_id,\n  doctor_name: doctorLabel,\n  new_date: trigger.new_date,\n  new_time: newTime,\n  new_date_display: formatDateDisplay(trigger.new_date),\n  new_time_display: formatTime12h(newTime),\n  timezone: CLINIC_TIMEZONE\n} }];\n"
+      },
+      "id": "2767f9e1-a9f2-4928-b4c1-b60b1e3426a1",
+      "name": "Validate Reschedule",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -448,
+        96
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.canReschedule }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              },
+              "rightValue": ""
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "7c9fc631-1f89-4394-90a3-e8cf01c158a5",
+      "name": "Can Reschedule?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -224,
+        96
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "1tLS1N4K93xGHwfs"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "appointment_id",
+              "keyValue": "={{ $json.appointment_id }}"
+            }
+          ]
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "appointment_date": "={{ $json.new_date }}",
+            "appointment_time": "={{ $json.new_time }}"
+          },
+          "schema": [
+            {
+              "id": "appointment_date",
+              "displayName": "appointment_date",
+              "type": "string",
+              "display": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "appointment_time",
+              "displayName": "appointment_time",
+              "type": "string",
+              "display": true,
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "1a8569c7-abab-4659-a464-d78c914567ff",
+      "name": "Update Appointment Slot",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "s1",
+              "name": "success",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "s2",
+              "name": "appointment_id",
+              "value": "={{ $('Validate Reschedule').item.json.appointment_id }}",
+              "type": "string"
+            },
+            {
+              "id": "s3",
+              "name": "message",
+              "value": "=Your appointment has been rescheduled.\n\nDate: {{ $('Validate Reschedule').item.json.new_date_display }}\nTime: {{ $('Validate Reschedule').item.json.new_time_display }}\nDoctor: {{ $('Validate Reschedule').item.json.doctor_name }}\nAppointment ID: {{ $('Validate Reschedule').item.json.appointment_id }}",
+              "type": "string"
+            },
+            {
+              "id": "s4",
+              "name": "new_date_display",
+              "value": "={{ $('Validate Reschedule').item.json.new_date_display }}",
+              "type": "string"
+            },
+            {
+              "id": "s5",
+              "name": "new_time_display",
+              "value": "={{ $('Validate Reschedule').item.json.new_time_display }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "22234b6e-0e8d-47ae-bef0-4b61b7b93fdc",
+      "name": "Success Response",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        224,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "f1",
+              "name": "success",
+              "value": false,
+              "type": "boolean"
+            },
+            {
+              "id": "f2",
+              "name": "message",
+              "value": "={{ $json.message }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "ad1e2273-2f31-4c9b-9723-bb111d93b5ac",
+      "name": "Failure Response",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        0,
+        192
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "gC8JDQIgpzSnxdTl"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "doctor_id",
+              "keyValue": "={{ $json.doctor_id }}"
+            }
+          ]
+        },
+        "returnAll": true
+      },
+      "id": "193f2469-cd5a-446c-be63-df51b960b4a1",
+      "name": "Get Doctor",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        -784,
+        96
+      ],
+      "alwaysOutputData": true
+    }
+  ],
+  "connections": {
+    "Execute Workflow Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get Appointment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Conflicting Appointment": {
+      "main": [
+        [
+          {
+            "node": "Validate Reschedule",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Reschedule": {
+      "main": [
+        [
+          {
+            "node": "Can Reschedule?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Can Reschedule?": {
+      "main": [
+        [
+          {
+            "node": "Update Appointment Slot",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Failure Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Appointment Slot": {
+      "main": [
+        [
+          {
+            "node": "Success Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Appointment": {
+      "main": [
+        [
+          {
+            "node": "Get Doctor",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Doctor": {
+      "main": [
+        [
+          {
+            "node": "Get Conflicting Appointment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": true,
+    "timeSavedMode": "fixed",
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "staticData": null,
+  "pinData": {}
+}

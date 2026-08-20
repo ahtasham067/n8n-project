@@ -1,0 +1,61 @@
+{
+  "name": "WhatsApp Booking Error Handler",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "12522f3e-dc5a-495a-a93e-4c933768be3d",
+      "name": "On Workflow Error",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "ahtasham067@gmail.com",
+        "toEmail": "ahtasham067@gmail.com",
+        "subject": "=\ud83d\udea8 [n8n] {{ $json.workflow.name }} failed at node: {{ $json.execution.lastNodeExecuted }}",
+        "emailFormat": "text",
+        "text": "=A workflow execution failed and needs attention.\n\nWorkflow: {{ $json.workflow.name }} (ID: {{ $json.workflow.id }})\nFailed node: {{ $json.execution.lastNodeExecuted }}\nError message: {{ $json.execution.error.message }}\nExecution ID: {{ $json.execution.id }}\nExecution mode: {{ $json.execution.mode }}\nTimestamp: {{ $now.toISO() }}\n\nDebugging details (stack trace):\n{{ $json.execution.error.stack || 'No stack trace available' }}\n\nOpen this execution: {{ $json.execution.url }}",
+        "options": {}
+      },
+      "id": "10631e30-82e5-456f-b97d-9562e3690655",
+      "name": "Email Admin",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        224,
+        0
+      ],
+      "webhookId": "b44f9170-4ba5-4ea4-9197-d1e1cfc07fa4",
+      "credentials": {
+        "smtp": {
+          "id": "m3V5iKCzv82oBoW9",
+          "name": "SMTP account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "On Workflow Error": {
+      "main": [
+        [
+          {
+            "node": "Email Admin",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": true
+  },
+  "staticData": null,
+  "pinData": {}
+}

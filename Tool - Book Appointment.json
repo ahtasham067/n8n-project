@@ -1,0 +1,430 @@
+{
+  "name": "Tool - Book Appointment",
+  "nodes": [
+    {
+      "parameters": {
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "patient_name"
+            },
+            {
+              "name": "phone_number"
+            },
+            {
+              "name": "doctor_id"
+            },
+            {
+              "name": "appointment_date"
+            },
+            {
+              "name": "appointment_time"
+            }
+          ]
+        }
+      },
+      "id": "98f22750-bb65-4b14-ac7e-968386ec880c",
+      "name": "Execute Workflow Trigger",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        48,
+        144
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "gC8JDQIgpzSnxdTl"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "doctor_id",
+              "keyValue": "={{ $json.doctor_id }}"
+            }
+          ]
+        },
+        "returnAll": true
+      },
+      "id": "b12ef1bb-0730-4148-829f-9cb74425ac3d",
+      "name": "Get Doctor",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        272,
+        144
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "1tLS1N4K93xGHwfs"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "doctor_id",
+              "keyValue": "={{ $('Execute Workflow Trigger').item.json.doctor_id }}"
+            },
+            {
+              "keyName": "appointment_date",
+              "keyValue": "={{ $('Execute Workflow Trigger').item.json.appointment_date }}"
+            },
+            {
+              "keyName": "status",
+              "keyValue": "booked"
+            }
+          ]
+        },
+        "returnAll": true
+      },
+      "id": "4dfd881a-de95-4fd5-8546-0a9b5d85cf7a",
+      "name": "Get Conflicting Appointment",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        496,
+        144
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// --- Clinic time formatting (presentation layer only; DB stores HH:mm) ---\nconst CLINIC_TIMEZONE = 'Asia/Karachi';\n\nfunction parseClinicTime(raw) {\n  if (raw == null || raw === '') return null;\n  const s = String(raw).trim().replace(/\\s+/g, ' ');\n  const zone = CLINIC_TIMEZONE;\n  const formats = ['HH:mm', 'H:mm', 'HH:mm:ss', 'H:mm:ss', 'h:mm a', 'h:mma', 'hh:mm a', 'hh:mma', 'h a', 'ha', 'h:mm:ss a'];\n  for (const fmt of formats) {\n    const dt = DateTime.fromFormat(s, fmt, { zone, locale: 'en' });\n    if (dt.isValid) return dt;\n  }\n  const iso = DateTime.fromISO(s, { zone });\n  if (iso.isValid && /T|\\d:\\d/.test(s)) return iso;\n  return null;\n}\n\nfunction toStoredTime(raw) {\n  const dt = parseClinicTime(raw);\n  return dt ? dt.toFormat('HH:mm') : null;\n}\n\nfunction formatTime12h(raw) {\n  const dt = parseClinicTime(raw);\n  if (!dt) return raw;\n  return dt.setLocale('en-US').toFormat('h:mm a').replace(/\\b(am|pm)\\b/gi, (m) => m.toUpperCase());\n}\n\nfunction clinicNow() {\n  return DateTime.now().setZone(CLINIC_TIMEZONE);\n}\n\nfunction formatDateDisplay(isoOrDate) {\n  const raw = String(isoOrDate || '').trim();\n  const datePart = raw.includes('T') ? raw.split('T')[0] : raw.slice(0, 10);\n  const dt = DateTime.fromISO(datePart, { zone: CLINIC_TIMEZONE });\n  return dt.isValid ? dt.toFormat('MMMM d, yyyy') : raw;\n}\n// --- end clinic time formatting ---\n\nconst doctorItems = $('Get Doctor').all();\nconst doctor = doctorItems[0] ? doctorItems[0].json : null;\nconst trigger = $('Execute Workflow Trigger').first().json;\n\nif (!doctor || !doctor.doctor_id) {\n  return [{ json: { canBook: false, message: 'No doctor found with ID ' + trigger.doctor_id + '. Please check the doctor ID and try again.' } }];\n}\n\nconst doctorLabel = doctor.doctor_name;\nconst workingDays = (doctor.working_days || '').split(',').map(d => d.trim()).filter(Boolean);\nconst dt = DateTime.fromISO(trigger.appointment_date, { zone: CLINIC_TIMEZONE });\nif (!dt.isValid) {\n  return [{ json: { canBook: false, message: 'The date ' + trigger.appointment_date + ' is not valid. Please use YYYY-MM-DD format.' } }];\n}\nconst weekdayMap = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];\nconst weekdayName = weekdayMap[dt.weekday - 1];\nif (!workingDays.includes(weekdayName)) {\n  return [{ json: { canBook: false, message: doctorLabel + ' does not work on ' + weekdayName + '. Working days are: ' + workingDays.join(', ') + '.' } }];\n}\n\nconst appointmentTime = toStoredTime(trigger.appointment_time);\nif (!appointmentTime) {\n  return [{ json: { canBook: false, message: 'The time ' + trigger.appointment_time + ' is not valid. Please choose a slot from the available list.' } }];\n}\n\nconst [startStr, endStr] = (doctor.working_hours || '09:00-17:00').split('-');\nconst duration = doctor.slot_duration_minutes || 30;\nlet slotCursor = DateTime.fromFormat(startStr.trim(), 'HH:mm', { zone: CLINIC_TIMEZONE });\nconst end = DateTime.fromFormat(endStr.trim(), 'HH:mm', { zone: CLINIC_TIMEZONE });\nconst allSlots = [];\nwhile (slotCursor.isValid && end.isValid && slotCursor < end) {\n  allSlots.push(slotCursor.toFormat('HH:mm'));\n  slotCursor = slotCursor.plus({ minutes: duration });\n}\nif (!allSlots.includes(appointmentTime)) {\n  return [{ json: { canBook: false, message: formatTime12h(appointmentTime) + ' is not a valid slot for ' + doctorLabel + '. Please choose an available time from CheckDoctorAvailability.' } }];\n}\n\nconst conflictItems = $input.all().filter(i => i.json && i.json.appointment_id && toStoredTime(i.json.appointment_time) === appointmentTime);\nif (conflictItems.length > 0) {\n  const dateDisplay = formatDateDisplay(trigger.appointment_date);\n  return [{ json: { canBook: false, message: 'Sorry, ' + doctorLabel + ' is already booked at ' + formatTime12h(appointmentTime) + ' on ' + dateDisplay + '. Please choose another slot.' } }];\n}\n\nconst appointmentId = 'APT-' + Date.now().toString().slice(-8);\nreturn [{ json: {\n  canBook: true,\n  appointment_id: appointmentId,\n  doctor_id: trigger.doctor_id,\n  doctor_name: doctorLabel,\n  patient_name: trigger.patient_name,\n  phone_number: trigger.phone_number,\n  appointment_date: trigger.appointment_date,\n  appointment_time: appointmentTime,\n  appointment_date_display: formatDateDisplay(trigger.appointment_date),\n  appointment_time_display: formatTime12h(appointmentTime),\n  timezone: CLINIC_TIMEZONE\n} }];\n"
+      },
+      "id": "eb8ab796-ffdc-49a0-9e20-04bec5636f0f",
+      "name": "Validate Booking",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        720,
+        144
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.canBook }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "rightValue": ""
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "db98c03e-4021-4a54-9c94-556db0ff041c",
+      "name": "Can Book?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        944,
+        144
+      ]
+    },
+    {
+      "parameters": {
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "1tLS1N4K93xGHwfs"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "appointment_id": "={{ $json.appointment_id }}",
+            "patient_name": "={{ $json.patient_name }}",
+            "phone_number": "={{ $json.phone_number }}",
+            "doctor_id": "={{ $json.doctor_id }}",
+            "doctor_name": "={{ $json.doctor_name }}",
+            "appointment_date": "={{ $json.appointment_date }}",
+            "appointment_time": "={{ $json.appointment_time }}",
+            "status": "booked"
+          },
+          "schema": [
+            {
+              "id": "appointment_id",
+              "displayName": "appointment_id",
+              "type": "string",
+              "display": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "patient_name",
+              "displayName": "patient_name",
+              "type": "string",
+              "display": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "phone_number",
+              "displayName": "phone_number",
+              "type": "string",
+              "display": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "doctor_id",
+              "displayName": "doctor_id",
+              "type": "string",
+              "display": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "doctor_name",
+              "displayName": "doctor_name",
+              "type": "string",
+              "display": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "appointment_date",
+              "displayName": "appointment_date",
+              "type": "string",
+              "display": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "appointment_time",
+              "displayName": "appointment_time",
+              "type": "string",
+              "display": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "type": "string",
+              "display": true,
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "7a9b5fda-363f-46e0-85d2-ec4a94a1d1fc",
+      "name": "Insert Appointment",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        1168,
+        48
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "s1",
+              "name": "success",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "s2",
+              "name": "appointment_id",
+              "value": "={{ $('Validate Booking').item.json.appointment_id }}",
+              "type": "string"
+            },
+            {
+              "id": "s3",
+              "name": "doctor_name",
+              "value": "={{ $('Validate Booking').item.json.doctor_name }}",
+              "type": "string"
+            },
+            {
+              "id": "s4",
+              "name": "appointment_date",
+              "value": "={{ $('Validate Booking').item.json.appointment_date }}",
+              "type": "string"
+            },
+            {
+              "id": "s5",
+              "name": "appointment_time",
+              "value": "={{ $('Validate Booking').item.json.appointment_time }}",
+              "type": "string"
+            },
+            {
+              "id": "s6",
+              "name": "message",
+              "value": "=Your dental appointment has been confirmed.\n\nDate: {{ $('Validate Booking').item.json.appointment_date_display }}\nTime: {{ $('Validate Booking').item.json.appointment_time_display }}\nDoctor: {{ $('Validate Booking').item.json.doctor_name }}\nService: Dental Consultation\nAppointment ID: {{ $('Validate Booking').item.json.appointment_id }}",
+              "type": "string"
+            },
+            {
+              "id": "s7",
+              "name": "appointment_date_display",
+              "value": "={{ $('Validate Booking').item.json.appointment_date_display }}",
+              "type": "string"
+            },
+            {
+              "id": "s8",
+              "name": "appointment_time_display",
+              "value": "={{ $('Validate Booking').item.json.appointment_time_display }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "786b8309-d3b8-4bbc-8f15-f24512b04e81",
+      "name": "Success Response",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        1392,
+        48
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "f1",
+              "name": "success",
+              "value": false,
+              "type": "boolean"
+            },
+            {
+              "id": "f2",
+              "name": "message",
+              "value": "={{ $json.message }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "bd7262eb-b1b0-46a3-b322-3698d45f69b3",
+      "name": "Failure Response",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        1168,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## Tool: Book Appointment\nValidates the doctor and slot availability, then inserts a new row into the Appointments data table.",
+        "height": 200,
+        "width": 300
+      },
+      "id": "1a513f7f-a9a2-4af6-bcf0-be67812b4b5e",
+      "name": "Sticky Note 546c3ec8",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Execute Workflow Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get Doctor",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Doctor": {
+      "main": [
+        [
+          {
+            "node": "Get Conflicting Appointment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Conflicting Appointment": {
+      "main": [
+        [
+          {
+            "node": "Validate Booking",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Booking": {
+      "main": [
+        [
+          {
+            "node": "Can Book?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Can Book?": {
+      "main": [
+        [
+          {
+            "node": "Insert Appointment",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Failure Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert Appointment": {
+      "main": [
+        [
+          {
+            "node": "Success Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": true,
+    "timeSavedMode": "fixed",
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "staticData": null,
+  "pinData": {}
+}

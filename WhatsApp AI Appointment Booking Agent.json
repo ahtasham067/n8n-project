@@ -1,0 +1,1055 @@
+{
+  "name": "WhatsApp AI Appointment Booking Agent",
+  "nodes": [
+    {
+      "parameters": {
+        "updates": [
+          "messages"
+        ],
+        "options": {
+          "messageStatusUpdates": []
+        }
+      },
+      "id": "4d182743-5c30-44b2-8bb7-b346135a7e70",
+      "name": "WhatsApp Trigger",
+      "type": "n8n-nodes-base.whatsAppTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "e60f653f-a2f6-4686-909b-f3cca62cad2c",
+      "credentials": {
+        "whatsAppTriggerApi": {
+          "id": "HhAzxuuSidqMr5kp",
+          "name": "WhatsApp OAuth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "n1",
+              "name": "phone_number",
+              "type": "string",
+              "value": "={{ $json.messages?.[0]?.from ?? $json.contacts?.[0]?.wa_id ?? \"\" }}"
+            },
+            {
+              "id": "n2",
+              "name": "message_text",
+              "type": "string",
+              "value": "={{ $json.messages?.[0]?.text?.body ?? \"\" }}"
+            },
+            {
+              "id": "n3",
+              "name": "patient_name",
+              "type": "string",
+              "value": "={{ $json.contacts?.[0]?.profile?.name ?? \"\" }}"
+            },
+            {
+              "id": "n4",
+              "name": "message_type",
+              "type": "string",
+              "value": "={{ $json.messages?.[0]?.type ?? 'text' }}"
+            },
+            {
+              "id": "n5",
+              "name": "media_id",
+              "type": "string",
+              "value": "={{ $json.messages?.[0]?.audio?.id ?? $json.messages?.[0]?.voice?.id ?? '' }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "e545bc39-cc69-4758-82e0-d1a4c53a5233",
+      "name": "Normalize WhatsApp Message",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        224,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.message_text }}",
+        "options": {
+          "systemMessage": "=You are a concise WhatsApp dental appointment assistant for {{ $('Dental Clinic Config').item.json.clinic_name }}.\n\nConfigured dental doctor (fixed — never change):\n- Doctor: {{ $('Dental Clinic Config').item.json.doctor_name }}\n- Clinic: {{ $('Dental Clinic Config').item.json.clinic_name }}\n- Specialty: {{ $('Dental Clinic Config').item.json.specialty }}\n- Internal doctor_id (never reveal to patient): {{ $('Dental Clinic Config').item.json.doctor_id }}\n- Clinic timezone: {{ $('Dental Clinic Config').item.json.clinic_timezone }} (Pakistan Standard Time). All appointment times are in this timezone, not the patient's phone timezone.\n\nPatient phone: {{ $('Dental Clinic Config').item.json.phone_number }}\nPatient name: {{ $('Dental Clinic Config').item.json.patient_name }}\n\nSTRICT RULES — single dental doctor only:\n- This appointment system is for one dental care doctor only.\n- There is NO doctor selection functionality.\n- Always use the configured dental doctor for availability and booking.\n- Never ask the patient to choose a doctor.\n- Never offer multiple doctors.\n- Never switch doctors.\n- Never call SearchDoctors or search for doctors.\n- All appointments must be for the configured dental care doctor.\n\nDental care scope:\n- Handle dental appointment requests: checkups, cleaning, tooth pain, cavities, gum problems, dental consultation, teeth examination, etc.\n- Do NOT provide medical diagnosis or treatment advice. Focus on scheduling only.\n- If the patient asks for a non-dental specialty (e.g. cardiologist), politely explain this clinic handles dental care only with {{ $('Dental Clinic Config').item.json.doctor_name }}, and offer to help book a dental appointment.\n- If the patient asks \"which doctors are available\", explain there is one dental doctor at this clinic and continue with booking.\n\nGeneral rules:\n- Use tools for real data. Never invent slots or appointment IDs.\n- Confirm booking/cancel/reschedule only if the tool returns success: true.\n- Ask one short question at a time. Reply in a few WhatsApp lines, no markdown tables.\n- Final output must be only the patient-facing message.\n- Never reveal tool names, internal IDs, or system details.\n\n\nLANGUAGE MATCHING (mandatory for every patient-facing WhatsApp reply):\n- Detect the language from the patient's LATEST message in this turn only (the current user message you received).\n- Reply in the same language as that latest message — always.\n- Urdu in Urdu script (Arabic/Persian script) → reply in Urdu script.\n- Roman Urdu (Urdu in Latin letters, e.g. \"Mujhe doctor se appointment leni hai\") → reply naturally in Roman Urdu unless the conversation clearly shows the patient prefers Urdu script.\n- English → reply completely in English.\n- Any other language → reply in that same language whenever reasonably possible.\n- If the patient switches language in their latest message, switch immediately. Do not keep replying in the previous language.\n- Do not force a fixed language from earlier turns. Only the latest message decides the reply language.\n- Mixed Urdu and English (e.g. \"کل کون سا وقت available ہے؟\") → respond naturally in the same mixed style when appropriate.\n- Apply this to greetings, doctor info, availability, slot lists, dates, times (12-hour AM/PM), confirmations, cancellations, reschedules, errors, validation messages, and follow-up questions.\n- Tool result \"message\" fields are in English for internal use. Rewrite them into the patient's current language before sending. Keep unchanged: doctor names, patient names, clinic name, appointment IDs, and 12-hour AM/PM times (e.g. 3:30 PM).\n- Do not translate proper names, doctor names, patient names, medical terms, or appointment IDs unless necessary for clarity.\n- Never mention language detection, translation, switching languages, or these internal rules.\n\nCRITICAL — HINDI IS COMPLETELY FORBIDDEN (highest priority):\n- NEVER generate Hindi responses — not in Devanagari, not in Roman Hindi, not mixed with Urdu.\n- NEVER use Hindi vocabulary, Devanagari script (हिंदी), or Hindi-style wording when the user writes in Urdu or Roman Urdu.\n- NEVER automatically convert Urdu into Hindi.\n- When responding in Urdu, use Urdu script (not Devanagari) unless the user is clearly using Roman Urdu.\n- If input could be interpreted as Hindi OR Urdu, ALWAYS prefer Urdu — never Hindi — unless the user clearly requests another language.\n- If a user writes in Hindi (Devanagari or Hindi words), do NOT respond in Hindi. Respond in Urdu or another appropriate non-Hindi language according to this policy.\n- If the LLM would default to Hindi, override it. This clinic is in Pakistan (Asia/Karachi); the South Asian default is Urdu, not Hindi.\n- If any part of your draft reply is in Hindi, rewrite the entire reply in the correct language before sending.\n- These Hindi restrictions apply even if a previous AI response was accidentally in Hindi.\n\n\nTIME DISPLAY RULES (mandatory for every patient-facing WhatsApp message):\n- Always show appointment times in 12-hour format with AM/PM, for example: 9:00 AM, 11:30 AM, 12:00 PM, 1:00 PM, 3:45 PM, 7:30 PM.\n- NEVER show 24-hour times to patients (never 09:00, 13:00, 15:45, 19:30).\n- 12:00 PM is noon. 12:00 AM is midnight. Never swap these.\n- Prefer pre-formatted tool fields: available_slots_display, appointment_time_display, *_display, and the tool message.\n- Do not list raw available_slots (those are HH:mm for tools only).\n- When listing slots, number them using available_slots_display, one time per line if helpful.\n- Confirmation layout (use the BookAppointment message when present):\n  Your dental appointment has been confirmed.\n  Date: [Month Day, Year]\n  Time: [h:mm AM/PM]\n  Doctor: [name]\n  Service: Dental Consultation\n  Appointment ID: [id]\n- Tool inputs for BookAppointment and RescheduleAppointment must still use HH:mm 24-hour (for example 09:00, 15:30). Convert a patient's \"3:30 PM\" to 15:30 only for the tool call.\n\nBooking flow:\n1. Greet and acknowledge the dental request.\n2. Ask for preferred date if not provided (default to today when checking availability).\n3. Call CheckDoctorAvailability with preferred_date only (doctor is fixed).\n4. List ALL available_slots_display numbered (12-hour AM/PM times). Never show raw available_slots to the patient. Wait for the patient to pick a number or time.\n5. After they pick a slot, call CheckDoctorAvailability again, then BookAppointment only if that time is still in available_slots (use the matching HH:mm value).\n6. On success, send the tool confirmation message (already 12-hour AM/PM). Do not rewrite times into 24-hour format.\n\nCancel/reschedule:\n- Use GetAppointment if they do not know the ID, then CancelAppointment or RescheduleAppointment.\n- Relay the tool message if success is false. Times in those messages are already 12-hour AM/PM.\n",
+          "maxIterations": 6
+        },
+        "enableStreaming": false
+      },
+      "id": "54025168-e07d-4377-acc4-162254b04fea",
+      "name": "Appointment Booking Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        1320,
+        0
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "model": "openai/gpt-oss-120b",
+        "options": {
+          "temperature": 0.2
+        }
+      },
+      "id": "6221c1df-d98b-4527-b5e3-a27043658c6c",
+      "name": "Groq Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGroq",
+      "typeVersion": 1,
+      "position": [
+        448,
+        224
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "credentials": {
+        "groqApi": {
+          "id": "8RikP3ta1Nm5ojcx",
+          "name": "Groq account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ $('Normalize WhatsApp Message').item.json.phone_number }}",
+        "contextWindowLength": 4
+      },
+      "id": "bce04dbe-a01f-489c-b964-0d88f94f10e8",
+      "name": "Conversation Memory",
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.4,
+      "position": [
+        576,
+        224
+      ]
+    },
+    {
+      "parameters": {
+        "description": "Check available dental appointment slots for the configured dental doctor on a specific date. Always call this before offering times. The doctor is fixed — do not ask the patient to choose a doctor. Input: preferred_date (YYYY-MM-DD). Tool responses are in English for internal use — present results to the patient in the language of their latest message. NEVER use Hindi in patient-facing text.",
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "K3aQylfpGB7OIUmy"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "matchingColumns": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false,
+          "schema": [
+            {
+              "id": "preferred_date",
+              "displayName": "preferred_date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "value": {
+            "doctor_id": "={{ $('Dental Clinic Config').item.json.doctor_id }}",
+            "preferred_date": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('preferred_date', 'The date to check availability for, in YYYY-MM-DD format') }}"
+          }
+        }
+      },
+      "id": "8d72136d-2383-40ba-9f5c-0b2217b2dd13",
+      "name": "CheckDoctorAvailability",
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 2.2,
+      "position": [
+        704,
+        224
+      ]
+    },
+    {
+      "parameters": {
+        "description": "Books a dental appointment with the configured dental doctor after the patient confirmed a date and time from CheckDoctorAvailability. Never invent a slot. Input: patient_name, phone_number, appointment_date, appointment_time. Tool responses are in English for internal use — present results to the patient in the language of their latest message. NEVER use Hindi in patient-facing text.",
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "vlxq9W4WX10a6sOt"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "matchingColumns": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false,
+          "schema": [
+            {
+              "id": "patient_name",
+              "displayName": "patient_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "phone_number",
+              "displayName": "phone_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "appointment_date",
+              "displayName": "appointment_date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "appointment_time",
+              "displayName": "appointment_time",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "value": {
+            "patient_name": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('patient_name', \"The patient's full name\") }}",
+            "phone_number": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('phone_number', \"The patient's WhatsApp phone number\") }}",
+            "doctor_id": "={{ $('Dental Clinic Config').item.json.doctor_id }}",
+            "appointment_date": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('appointment_date', 'Appointment date in YYYY-MM-DD format') }}",
+            "appointment_time": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('appointment_time', 'Appointment time in HH:mm 24-hour format') }}"
+          }
+        }
+      },
+      "id": "40ace813-06bb-4f9f-88b8-ad51407aa6ce",
+      "name": "BookAppointment",
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 2.2,
+      "position": [
+        832,
+        224
+      ]
+    },
+    {
+      "parameters": {
+        "description": "Cancels an existing appointment. Always confirm the appointment_id with the patient (use GetAppointment first if unknown) before cancelling. Input: appointment_id. Tool responses are in English for internal use — present results to the patient in the language of their latest message. NEVER use Hindi in patient-facing text.",
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "YU0xJOfDAWTgu7ie"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "matchingColumns": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false,
+          "schema": [
+            {
+              "id": "appointment_id",
+              "displayName": "appointment_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "value": {
+            "appointment_id": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('appointment_id', 'The appointment ID to cancel, e.g. APT-12345678') }}"
+          }
+        }
+      },
+      "id": "53f6bbb0-5cb3-4d02-9822-0b89c9997be3",
+      "name": "CancelAppointment",
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 2.2,
+      "position": [
+        960,
+        224
+      ]
+    },
+    {
+      "parameters": {
+        "description": "Moves an existing appointment to a new date/time. Use GetAppointment first if the appointment_id is unknown, and CheckDoctorAvailability to find a valid new slot before calling this. Input: appointment_id, new_date, new_time. Tool responses are in English for internal use — present results to the patient in the language of their latest message. NEVER use Hindi in patient-facing text.",
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "Z1FoatldEaEwpbS4"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "matchingColumns": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false,
+          "schema": [
+            {
+              "id": "appointment_id",
+              "displayName": "appointment_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "new_date",
+              "displayName": "new_date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "new_time",
+              "displayName": "new_time",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "value": {
+            "appointment_id": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('appointment_id', 'The appointment ID to reschedule, e.g. APT-12345678') }}",
+            "new_date": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('new_date', 'The new appointment date in YYYY-MM-DD format') }}",
+            "new_time": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('new_time', 'The new appointment time in HH:mm 24-hour format') }}"
+          }
+        }
+      },
+      "id": "bfb2ea1d-b50f-4136-8f88-cccb26cf88d2",
+      "name": "RescheduleAppointment",
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 2.2,
+      "position": [
+        1088,
+        224
+      ]
+    },
+    {
+      "parameters": {
+        "description": "Looks up the patient's active appointment(s) using their WhatsApp phone number. Use this to check status, or before cancelling/rescheduling when the patient doesn't know their appointment ID. Input: phone_number. Tool responses are in English for internal use — present results to the patient in the language of their latest message. NEVER use Hindi in patient-facing text.",
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "L3GjYUaO84jum665"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "matchingColumns": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false,
+          "schema": [
+            {
+              "id": "phone_number",
+              "displayName": "phone_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "value": {
+            "phone_number": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('phone_number', \"The patient's WhatsApp phone number\") }}"
+          }
+        }
+      },
+      "id": "e4dce2e1-6580-4053-a288-fe27db5b9b5f",
+      "name": "GetAppointment",
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 2.2,
+      "position": [
+        1216,
+        224
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "e1",
+              "name": "output",
+              "value": "={{ (() => { const t = $('Dental Clinic Config').item.json.message_text || ''; if (/[\\u0900-\\u097F]/.test(t)) return 'معذرت، ابھی appointment system دستیاب نہیں ہے۔ براہ کرم چند منٹ بعد دوبارہ کوشش کریں۔'; if (/[\\u0600-\\u06FF]/.test(t)) return 'معذرت، ابھی appointment system دستیاب نہیں ہے۔ براہ کرم چند منٹ بعد دوبارہ کوشش کریں۔'; return \"I'm sorry, I'm unable to access the appointment system right now. Please try again in a few minutes.\"; })() }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "79800134-9a5a-4d7b-bb9c-3272e18d4254",
+      "name": "Agent Error Fallback",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        1540,
+        -120
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "send",
+        "phoneNumberId": "1267616473108112",
+        "recipientPhoneNumber": "={{ $('Normalize WhatsApp Message').item.json.phone_number }}",
+        "textBody": "={{ $json.output }}",
+        "additionalFields": {}
+      },
+      "id": "ce7d1b3c-a8f7-4f75-b8ae-92190f823d1b",
+      "name": "Send WhatsApp Reply",
+      "type": "n8n-nodes-base.whatsApp",
+      "typeVersion": 1.1,
+      "position": [
+        1760,
+        0
+      ],
+      "webhookId": "ce4dd1c7-0667-4344-9fa1-1c10c9bd270c",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "credentials": {
+        "whatsAppApi": {
+          "id": "aInNdUR5ITd8z3il",
+          "name": "WhatsApp account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "description": "Resolves a doctor by name (exact, partial, first or last name, case-insensitive). ALWAYS call this first whenever the patient mentions a doctor by name. NEVER ask the patient for a doctor ID. Input: doctor_name. Tool responses are in English for internal use — present results to the patient in the language of their latest message. NEVER use Hindi in patient-facing text.",
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "uv2kXklXGCUD8xid"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "doctor_name": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('doctor_name', 'The doctor name or partial name the patient mentioned, e.g. Sara Malik') }}"
+          },
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false,
+          "matchingColumns": [],
+          "schema": [
+            {
+              "canBeUsedToMatch": true,
+              "defaultMatch": false,
+              "display": true,
+              "displayName": "doctor_name",
+              "id": "doctor_name",
+              "required": false,
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "id": "45e577b2-8387-41c0-8e4a-c61a56c4f4fd",
+      "name": "SearchDoctors",
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 2.2,
+      "position": [
+        576,
+        368
+      ],
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.message_text }}",
+              "operator": {
+                "operation": "notEmpty",
+                "type": "string"
+              },
+              "rightValue": ""
+            }
+          ],
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          }
+        },
+        "options": {}
+      },
+      "id": "10433346-61f5-4f35-bce7-9b0a4661cd5d",
+      "name": "Only Real Messages",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1100,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "dc1",
+              "name": "doctor_id",
+              "type": "string",
+              "value": "DOC-003"
+            },
+            {
+              "id": "dc2",
+              "name": "doctor_name",
+              "type": "string",
+              "value": "Dr. Bilal Hussain"
+            },
+            {
+              "id": "dc3",
+              "name": "clinic_name",
+              "type": "string",
+              "value": "SmileCare Dental Clinic"
+            },
+            {
+              "id": "dc4",
+              "name": "specialty",
+              "type": "string",
+              "value": "Dental Care"
+            },
+            {
+              "id": "dc5",
+              "name": "phone_number",
+              "type": "string",
+              "value": "={{ $json.phone_number }}"
+            },
+            {
+              "id": "dc6",
+              "name": "message_text",
+              "type": "string",
+              "value": "={{ $json.message_text }}"
+            },
+            {
+              "id": "dc7",
+              "name": "patient_name",
+              "type": "string",
+              "value": "={{ $json.patient_name }}"
+            },
+            {
+              "id": "dc8",
+              "name": "clinic_timezone",
+              "type": "string",
+              "value": "Asia/Karachi"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      "name": "Dental Clinic Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        880,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "v1",
+              "leftValue": "={{ $json.message_type }}",
+              "rightValue": "audio",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+      "name": "Detect Message Type",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        448,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://graph.facebook.com/v19.0/{{ $('Normalize WhatsApp Message').item.json.media_id }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "whatsAppApi",
+        "options": {}
+      },
+      "id": "c3d4e5f6-a7b8-9012-cdef-123456789012",
+      "name": "Get WhatsApp Audio",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        672,
+        200
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 1000,
+      "onError": "continueErrorOutput",
+      "credentials": {
+        "whatsAppApi": {
+          "id": "aInNdUR5ITd8z3il",
+          "name": "WhatsApp account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $json.url }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "whatsAppApi",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file",
+              "outputPropertyName": "data"
+            }
+          }
+        }
+      },
+      "id": "d4e5f6a7-b8c9-0123-def0-234567890123",
+      "name": "Download Voice Note",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        880,
+        200
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 1000,
+      "onError": "continueErrorOutput",
+      "credentials": {
+        "whatsAppApi": {
+          "id": "aInNdUR5ITd8z3il",
+          "name": "WhatsApp account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.groq.com/openai/v1/audio/transcriptions",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "groqApi",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "whisper-large-v3"
+            },
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "data"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "e5f6a7b8-c9d0-1234-ef01-345678901234",
+      "name": "Transcribe Voice Note",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1088,
+        200
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 1000,
+      "onError": "continueErrorOutput",
+      "credentials": {
+        "groqApi": {
+          "id": "8RikP3ta1Nm5ojcx",
+          "name": "Groq account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "p1",
+              "name": "phone_number",
+              "type": "string",
+              "value": "={{ $('Normalize WhatsApp Message').item.json.phone_number }}"
+            },
+            {
+              "id": "p2",
+              "name": "patient_name",
+              "type": "string",
+              "value": "={{ $('Normalize WhatsApp Message').item.json.patient_name }}"
+            },
+            {
+              "id": "p3",
+              "name": "message_text",
+              "type": "string",
+              "value": "={{ $json.text }}"
+            },
+            {
+              "id": "p4",
+              "name": "message_source",
+              "type": "string",
+              "value": "voice"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "f6a7b8c9-d0e1-2345-f012-456789012345",
+      "name": "Prepare AI Input",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        1296,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "ve1",
+              "name": "output",
+              "type": "string",
+              "value": "معذرت، آپ کا voice message نہیں کھل سکا۔ براہ کرم دوبارہ بھیجیں۔\n\nSorry, I couldn't access your voice message. Please try sending it again."
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a7b8c9d0-e1f2-3456-0123-567890123456",
+      "name": "Voice Download Error",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        880,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "ve2",
+              "name": "output",
+              "type": "string",
+              "value": "معذرت، voice message سمجھ نہیں آیا۔ براہ کرم دوبارہ بھیجیں یا text میں لکھیں۔\n\nSorry, I couldn't understand the voice message. Please try again or send your request as text."
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "b8c9d0e1-f2a3-4567-1234-678901234567",
+      "name": "Voice Transcription Error",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        1088,
+        400
+      ]
+    }
+  ],
+  "connections": {
+    "WhatsApp Trigger": {
+      "main": [
+        [
+          {
+            "node": "Normalize WhatsApp Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Appointment Booking Agent": {
+      "main": [
+        [
+          {
+            "node": "Send WhatsApp Reply",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Agent Error Fallback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Conversation Memory": {
+      "ai_memory": [
+        [
+          {
+            "node": "Appointment Booking Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "CheckDoctorAvailability": {
+      "ai_tool": [
+        [
+          {
+            "node": "Appointment Booking Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "BookAppointment": {
+      "ai_tool": [
+        [
+          {
+            "node": "Appointment Booking Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "CancelAppointment": {
+      "ai_tool": [
+        [
+          {
+            "node": "Appointment Booking Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "RescheduleAppointment": {
+      "ai_tool": [
+        [
+          {
+            "node": "Appointment Booking Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GetAppointment": {
+      "ai_tool": [
+        [
+          {
+            "node": "Appointment Booking Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agent Error Fallback": {
+      "main": [
+        [
+          {
+            "node": "Send WhatsApp Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize WhatsApp Message": {
+      "main": [
+        [
+          {
+            "node": "Detect Message Type",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Only Real Messages": {
+      "main": [
+        [
+          {
+            "node": "Appointment Booking Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Groq Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Appointment Booking Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Dental Clinic Config": {
+      "main": [
+        [
+          {
+            "node": "Only Real Messages",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Detect Message Type": {
+      "main": [
+        [
+          {
+            "node": "Get WhatsApp Audio",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Dental Clinic Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get WhatsApp Audio": {
+      "main": [
+        [
+          {
+            "node": "Download Voice Note",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Voice Download Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download Voice Note": {
+      "main": [
+        [
+          {
+            "node": "Transcribe Voice Note",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Voice Download Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Transcribe Voice Note": {
+      "main": [
+        [
+          {
+            "node": "Prepare AI Input",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Voice Transcription Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare AI Input": {
+      "main": [
+        [
+          {
+            "node": "Dental Clinic Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Voice Download Error": {
+      "main": [
+        [
+          {
+            "node": "Send WhatsApp Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Voice Transcription Error": {
+      "main": [
+        [
+          {
+            "node": "Send WhatsApp Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": true,
+    "errorWorkflow": "2uyeIR2m38k0SSHB",
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "staticData": null,
+  "pinData": {}
+}

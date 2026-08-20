@@ -1,0 +1,118 @@
+{
+  "name": "Tool - Get Appointment",
+  "nodes": [
+    {
+      "parameters": {
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "phone_number"
+            }
+          ]
+        }
+      },
+      "id": "365dba15-9056-469e-a796-3898910e143c",
+      "name": "Execute Workflow Trigger",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        48,
+        48
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "1tLS1N4K93xGHwfs"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "phone_number",
+              "keyValue": "={{ $json.phone_number }}"
+            },
+            {
+              "keyName": "status",
+              "keyValue": "booked"
+            }
+          ]
+        },
+        "returnAll": true
+      },
+      "id": "7949ae8b-8208-44c3-8c59-c4a66747d955",
+      "name": "Get Appointments By Phone",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        272,
+        48
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// --- Clinic time formatting (presentation layer only; DB stores HH:mm) ---\nconst CLINIC_TIMEZONE = 'Asia/Karachi';\n\nfunction parseClinicTime(raw) {\n  if (raw == null || raw === '') return null;\n  const s = String(raw).trim().replace(/\\s+/g, ' ');\n  const zone = CLINIC_TIMEZONE;\n  const formats = ['HH:mm', 'H:mm', 'HH:mm:ss', 'H:mm:ss', 'h:mm a', 'h:mma', 'hh:mm a', 'hh:mma', 'h a', 'ha', 'h:mm:ss a'];\n  for (const fmt of formats) {\n    const dt = DateTime.fromFormat(s, fmt, { zone, locale: 'en' });\n    if (dt.isValid) return dt;\n  }\n  const iso = DateTime.fromISO(s, { zone });\n  if (iso.isValid && /T|\\d:\\d/.test(s)) return iso;\n  return null;\n}\n\nfunction toStoredTime(raw) {\n  const dt = parseClinicTime(raw);\n  return dt ? dt.toFormat('HH:mm') : null;\n}\n\nfunction formatTime12h(raw) {\n  const dt = parseClinicTime(raw);\n  if (!dt) return raw;\n  return dt.setLocale('en-US').toFormat('h:mm a').replace(/\\b(am|pm)\\b/gi, (m) => m.toUpperCase());\n}\n\nfunction clinicNow() {\n  return DateTime.now().setZone(CLINIC_TIMEZONE);\n}\n\nfunction formatDateDisplay(isoOrDate) {\n  const raw = String(isoOrDate || '').trim();\n  const datePart = raw.includes('T') ? raw.split('T')[0] : raw.slice(0, 10);\n  const dt = DateTime.fromISO(datePart, { zone: CLINIC_TIMEZONE });\n  return dt.isValid ? dt.toFormat('MMMM d, yyyy') : raw;\n}\n// --- end clinic time formatting ---\n\nconst items = $input.all().filter(i => i.json && i.json.appointment_id);\n\nif (items.length === 0) {\n  return [{ json: { success: true, found: false, message: 'No active appointments were found for this phone number.' } }];\n}\n\nconst appointments = items.map(i => ({\n  appointment_id: i.json.appointment_id,\n  doctor_name: i.json.doctor_name,\n  appointment_date: i.json.appointment_date,\n  appointment_time: toStoredTime(i.json.appointment_time) || i.json.appointment_time,\n  appointment_date_display: formatDateDisplay(i.json.appointment_date),\n  appointment_time_display: formatTime12h(i.json.appointment_time),\n  status: i.json.status,\n  timezone: CLINIC_TIMEZONE\n}));\n\nconst summary = appointments.map(a => a.doctor_name + ' on ' + a.appointment_date_display + ' at ' + a.appointment_time_display + ' (ID: ' + a.appointment_id + ')').join('; ');\n\nreturn [{ json: { success: true, found: true, appointments, timezone: CLINIC_TIMEZONE, message: 'Active appointments: ' + summary } }];\n"
+      },
+      "id": "c5bafa86-ebeb-4a48-b60b-71880bfc61f9",
+      "name": "Format Appointment Info",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        496,
+        48
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## Tool: Get Appointment\nLooks up all active (booked) appointments for a given WhatsApp phone number.",
+        "height": 200,
+        "width": 300
+      },
+      "id": "5fe26bef-2b10-45e5-83b5-c5e51166490a",
+      "name": "Sticky Note edfaf436",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Execute Workflow Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get Appointments By Phone",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Appointments By Phone": {
+      "main": [
+        [
+          {
+            "node": "Format Appointment Info",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": true,
+    "timeSavedMode": "fixed",
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "staticData": null,
+  "pinData": {}
+}

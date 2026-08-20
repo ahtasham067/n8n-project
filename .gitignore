@@ -1,0 +1,11 @@
+# Local secrets — never commit
+.env
+.env.local
+.env.*.local
+
+# Generated n8n credential overwrite payload (contains secrets)
+config/credentials-overwrite.json
+/node_modules
+/scripts
+/config
+/lib

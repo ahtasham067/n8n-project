@@ -1,0 +1,165 @@
+{
+  "name": "Tool - Check Doctor Availability",
+  "nodes": [
+    {
+      "parameters": {
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "doctor_id"
+            },
+            {
+              "name": "preferred_date"
+            }
+          ]
+        }
+      },
+      "id": "29085e7b-69aa-47a6-985e-b8bf336e31cc",
+      "name": "Execute Workflow Trigger",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        48,
+        48
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "gC8JDQIgpzSnxdTl"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "doctor_id",
+              "keyValue": "={{ $json.doctor_id }}"
+            }
+          ]
+        },
+        "returnAll": true
+      },
+      "id": "662838fe-b34d-4276-99d6-7c035fb06682",
+      "name": "Get Doctor",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        272,
+        48
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "1tLS1N4K93xGHwfs"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "doctor_id",
+              "keyValue": "={{ $('Execute Workflow Trigger').item.json.doctor_id }}"
+            },
+            {
+              "keyName": "appointment_date",
+              "keyValue": "={{ $('Execute Workflow Trigger').item.json.preferred_date }}"
+            },
+            {
+              "keyName": "status",
+              "keyValue": "booked"
+            }
+          ]
+        },
+        "returnAll": true
+      },
+      "id": "bc7744dd-f7e9-4c4b-a553-b7a59d37a503",
+      "name": "Get Booked Appointments",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        496,
+        48
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// --- Clinic time formatting (presentation layer only; DB stores HH:mm) ---\nconst CLINIC_TIMEZONE = 'Asia/Karachi';\n\nfunction parseClinicTime(raw) {\n  if (raw == null || raw === '') return null;\n  const s = String(raw).trim().replace(/\\s+/g, ' ');\n  const zone = CLINIC_TIMEZONE;\n  const formats = ['HH:mm', 'H:mm', 'HH:mm:ss', 'H:mm:ss', 'h:mm a', 'h:mma', 'hh:mm a', 'hh:mma', 'h a', 'ha', 'h:mm:ss a'];\n  for (const fmt of formats) {\n    const dt = DateTime.fromFormat(s, fmt, { zone, locale: 'en' });\n    if (dt.isValid) return dt;\n  }\n  const iso = DateTime.fromISO(s, { zone });\n  if (iso.isValid && /T|\\d:\\d/.test(s)) return iso;\n  return null;\n}\n\nfunction toStoredTime(raw) {\n  const dt = parseClinicTime(raw);\n  return dt ? dt.toFormat('HH:mm') : null;\n}\n\nfunction formatTime12h(raw) {\n  const dt = parseClinicTime(raw);\n  if (!dt) return raw;\n  return dt.setLocale('en-US').toFormat('h:mm a').replace(/\\b(am|pm)\\b/gi, (m) => m.toUpperCase());\n}\n\nfunction clinicNow() {\n  return DateTime.now().setZone(CLINIC_TIMEZONE);\n}\n\nfunction formatDateDisplay(isoOrDate) {\n  const raw = String(isoOrDate || '').trim();\n  const datePart = raw.includes('T') ? raw.split('T')[0] : raw.slice(0, 10);\n  const dt = DateTime.fromISO(datePart, { zone: CLINIC_TIMEZONE });\n  return dt.isValid ? dt.toFormat('MMMM d, yyyy') : raw;\n}\n// --- end clinic time formatting ---\n\nconst doctorItems = $('Get Doctor').all();\nconst doctor = doctorItems[0] ? doctorItems[0].json : null;\nconst trigger = $('Execute Workflow Trigger').first().json;\n\nif (!doctor || !doctor.doctor_id) {\n  return [{ json: { success: false, message: 'No doctor found with ID ' + trigger.doctor_id + '. Please check the doctor ID and try again.' } }];\n}\n\nconst workingDays = (doctor.working_days || '').split(',').map(d => d.trim()).filter(Boolean);\nconst preferredDate = trigger.preferred_date;\nconst dt = DateTime.fromISO(preferredDate, { zone: CLINIC_TIMEZONE });\n\nif (!dt.isValid) {\n  return [{ json: { success: false, message: 'The date ' + preferredDate + ' is not valid. Please use YYYY-MM-DD format.' } }];\n}\n\nconst weekdayMap = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];\nconst weekdayName = weekdayMap[dt.weekday - 1];\nconst doctorLabel = doctor.doctor_name;\nconst dateDisplay = formatDateDisplay(preferredDate);\n\nif (!workingDays.includes(weekdayName)) {\n  return [{ json: { success: true, doctor_id: doctor.doctor_id, doctor_name: doctorLabel, date: preferredDate, date_display: dateDisplay, available_slots: [], available_slots_display: [], timezone: CLINIC_TIMEZONE, message: doctorLabel + ' does not work on ' + weekdayName + '. Working days are: ' + workingDays.join(', ') + '.' } }];\n}\n\nconst [startStr, endStr] = (doctor.working_hours || '09:00-17:00').split('-');\nconst duration = doctor.slot_duration_minutes || 30;\nlet slotCursor = DateTime.fromFormat(startStr.trim(), 'HH:mm', { zone: CLINIC_TIMEZONE });\nconst end = DateTime.fromFormat(endStr.trim(), 'HH:mm', { zone: CLINIC_TIMEZONE });\nconst allSlots = [];\nwhile (slotCursor < end) {\n  allSlots.push(slotCursor.toFormat('HH:mm'));\n  slotCursor = slotCursor.plus({ minutes: duration });\n}\n\nconst bookedItems = $input.all();\nconst bookedTimes = bookedItems.map(i => toStoredTime(i.json.appointment_time)).filter(Boolean);\nlet availableSlots = allSlots.filter(s => !bookedTimes.includes(s));\n\nconst now = clinicNow();\nconst isToday = dt.hasSame(now, 'day');\nlet pastSlotsRemoved = false;\nif (isToday) {\n  const beforeCount = availableSlots.length;\n  availableSlots = availableSlots.filter(s => {\n    const slotDt = DateTime.fromFormat(s, 'HH:mm', { zone: CLINIC_TIMEZONE }).set({ year: now.year, month: now.month, day: now.day });\n    return slotDt > now;\n  });\n  pastSlotsRemoved = availableSlots.length !== beforeCount;\n}\n\nconst availableSlotsDisplay = availableSlots.map(formatTime12h);\n\nlet message;\nif (availableSlots.length) {\n  message = 'Available slots for ' + doctorLabel + ' on ' + dateDisplay + ': ' + availableSlotsDisplay.join(', ');\n} else if (isToday && pastSlotsRemoved) {\n  message = 'No more slots remaining today for ' + doctorLabel + '. Please try another date.';\n} else {\n  message = 'No slots available for ' + doctorLabel + ' on ' + dateDisplay + '. Please try another date.';\n}\n\nreturn [{ json: {\n  success: true,\n  doctor_id: doctor.doctor_id,\n  doctor_name: doctorLabel,\n  date: preferredDate,\n  date_display: dateDisplay,\n  timezone: CLINIC_TIMEZONE,\n  available_slots: availableSlots,\n  available_slots_display: availableSlotsDisplay,\n  message: message\n} }];\n"
+      },
+      "id": "a1557c55-08c9-4bc2-b503-ce02cdb00f52",
+      "name": "Compute Available Slots",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        720,
+        48
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## Tool: Check Doctor Availability\nLooks up the doctor, computes all working-hour slots, and removes already-booked slots for the requested date.",
+        "height": 200,
+        "width": 300
+      },
+      "id": "3af1c768-c753-423f-95e9-da40651bf4d4",
+      "name": "Sticky Note aff4940b",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Execute Workflow Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get Doctor",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Doctor": {
+      "main": [
+        [
+          {
+            "node": "Get Booked Appointments",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Booked Appointments": {
+      "main": [
+        [
+          {
+            "node": "Compute Available Slots",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": true,
+    "timeSavedMode": "fixed",
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "staticData": null,
+  "pinData": {}
+}

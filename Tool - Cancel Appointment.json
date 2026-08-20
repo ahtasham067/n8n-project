@@ -1,0 +1,293 @@
+{
+  "name": "Tool - Cancel Appointment",
+  "nodes": [
+    {
+      "parameters": {
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "appointment_id"
+            }
+          ]
+        }
+      },
+      "id": "0df954ff-99d2-48a5-821a-80efbc409d63",
+      "name": "Execute Workflow Trigger",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        48,
+        144
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "1tLS1N4K93xGHwfs"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "appointment_id",
+              "keyValue": "={{ $json.appointment_id }}"
+            }
+          ]
+        },
+        "returnAll": true
+      },
+      "id": "7552e6b3-0864-42cb-8470-8560d593e028",
+      "name": "Get Appointment",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        272,
+        144
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// --- Clinic time formatting (presentation layer only; DB stores HH:mm) ---\nconst CLINIC_TIMEZONE = 'Asia/Karachi';\n\nfunction parseClinicTime(raw) {\n  if (raw == null || raw === '') return null;\n  const s = String(raw).trim().replace(/\\s+/g, ' ');\n  const zone = CLINIC_TIMEZONE;\n  const formats = ['HH:mm', 'H:mm', 'HH:mm:ss', 'H:mm:ss', 'h:mm a', 'h:mma', 'hh:mm a', 'hh:mma', 'h a', 'ha', 'h:mm:ss a'];\n  for (const fmt of formats) {\n    const dt = DateTime.fromFormat(s, fmt, { zone, locale: 'en' });\n    if (dt.isValid) return dt;\n  }\n  const iso = DateTime.fromISO(s, { zone });\n  if (iso.isValid && /T|\\d:\\d/.test(s)) return iso;\n  return null;\n}\n\nfunction toStoredTime(raw) {\n  const dt = parseClinicTime(raw);\n  return dt ? dt.toFormat('HH:mm') : null;\n}\n\nfunction formatTime12h(raw) {\n  const dt = parseClinicTime(raw);\n  if (!dt) return raw;\n  return dt.setLocale('en-US').toFormat('h:mm a').replace(/\\b(am|pm)\\b/gi, (m) => m.toUpperCase());\n}\n\nfunction clinicNow() {\n  return DateTime.now().setZone(CLINIC_TIMEZONE);\n}\n\nfunction formatDateDisplay(isoOrDate) {\n  const raw = String(isoOrDate || '').trim();\n  const datePart = raw.includes('T') ? raw.split('T')[0] : raw.slice(0, 10);\n  const dt = DateTime.fromISO(datePart, { zone: CLINIC_TIMEZONE });\n  return dt.isValid ? dt.toFormat('MMMM d, yyyy') : raw;\n}\n// --- end clinic time formatting ---\n\nconst CANCELLATION_CUTOFF_MINUTES = 15;\n\nconst items = $input.all();\nconst appt = items[0] ? items[0].json : null;\n\nif (!appt || !appt.appointment_id) {\n  return [{ json: { canCancel: false, message: 'No appointment found with that ID. Please double-check and try again.' } }];\n}\nif (appt.status === 'cancelled') {\n  return [{ json: { canCancel: false, message: 'This appointment has already been cancelled.' } }];\n}\n\nconst datePart = String(appt.appointment_date || '').includes('T') ? DateTime.fromISO(appt.appointment_date, { zone: CLINIC_TIMEZONE }).toFormat('yyyy-MM-dd') : String(appt.appointment_date || '').slice(0, 10);\nconst storedTime = toStoredTime(appt.appointment_time);\nconst apptDateTime = DateTime.fromFormat(datePart + ' ' + storedTime, 'yyyy-MM-dd HH:mm', { zone: CLINIC_TIMEZONE });\nif (apptDateTime.isValid) {\n  const now = clinicNow();\n  const minutesUntil = apptDateTime.diff(now, 'minutes').minutes;\n\n  if (minutesUntil <= 0) {\n    return [{ json: { canCancel: false, message: 'This appointment time has already passed, so it cannot be cancelled.' } }];\n  }\n  if (minutesUntil <= CANCELLATION_CUTOFF_MINUTES) {\n    return [{ json: { canCancel: false, message: 'Sorry, this appointment cannot be cancelled because it is too close to the scheduled time. Cancellation is only allowed up to ' + CANCELLATION_CUTOFF_MINUTES + ' minutes before the appointment.' } }];\n  }\n}\n\nreturn [{ json: {\n  canCancel: true,\n  appointment_id: appt.appointment_id,\n  doctor_name: appt.doctor_name,\n  appointment_date: appt.appointment_date,\n  appointment_time: storedTime || appt.appointment_time,\n  appointment_date_display: formatDateDisplay(appt.appointment_date),\n  appointment_time_display: formatTime12h(appt.appointment_time),\n  timezone: CLINIC_TIMEZONE\n} }];\n"
+      },
+      "id": "db752994-1336-422f-a3c7-edf7c329ca3f",
+      "name": "Validate Cancellation",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        496,
+        144
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.canCancel }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              },
+              "rightValue": ""
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "6f833003-8e73-40ae-a6ec-5359ead9d917",
+      "name": "Can Cancel?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        720,
+        144
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "1tLS1N4K93xGHwfs"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "appointment_id",
+              "keyValue": "={{ $json.appointment_id }}"
+            }
+          ]
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "status": "cancelled"
+          },
+          "schema": [
+            {
+              "id": "status",
+              "displayName": "status",
+              "type": "string",
+              "display": true,
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "8c30a48b-9b95-4dfd-b40d-8a1ff6c5be52",
+      "name": "Update Appointment Status",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        944,
+        48
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "s1",
+              "name": "success",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "s2",
+              "name": "appointment_id",
+              "value": "={{ $('Validate Cancellation').item.json.appointment_id }}",
+              "type": "string"
+            },
+            {
+              "id": "s3",
+              "name": "message",
+              "value": "=Your appointment has been cancelled.\n\nDate: {{ $('Validate Cancellation').item.json.appointment_date_display }}\nTime: {{ $('Validate Cancellation').item.json.appointment_time_display }}\nDoctor: {{ $('Validate Cancellation').item.json.doctor_name }}\nAppointment ID: {{ $('Validate Cancellation').item.json.appointment_id }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "6375212c-87d6-42a9-9bf3-7d7f7d1d3384",
+      "name": "Success Response",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        1168,
+        48
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "f1",
+              "name": "success",
+              "value": false,
+              "type": "boolean"
+            },
+            {
+              "id": "f2",
+              "name": "message",
+              "value": "={{ $json.message }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "e0494079-17e4-4985-a42a-a6ffff55a45e",
+      "name": "Failure Response",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        944,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## Tool: Cancel Appointment\nLooks up the appointment by ID and marks it cancelled if it exists and is not already cancelled.",
+        "height": 200,
+        "width": 300
+      },
+      "id": "f8826208-f3dc-4ac8-9a30-db59d3ade3ca",
+      "name": "Sticky Note f5f60d76",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Execute Workflow Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get Appointment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Appointment": {
+      "main": [
+        [
+          {
+            "node": "Validate Cancellation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Cancellation": {
+      "main": [
+        [
+          {
+            "node": "Can Cancel?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Can Cancel?": {
+      "main": [
+        [
+          {
+            "node": "Update Appointment Status",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Failure Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Appointment Status": {
+      "main": [
+        [
+          {
+            "node": "Success Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": true,
+    "timeSavedMode": "fixed",
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "staticData": null,
+  "pinData": {}
+}
