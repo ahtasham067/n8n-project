@@ -26,7 +26,7 @@
       "type": "n8n-nodes-base.emailSend",
       "typeVersion": 2.1,
       "position": [
-        224,
+        280,
         0
       ],
       "webhookId": "b44f9170-4ba5-4ea4-9197-d1e1cfc07fa4",

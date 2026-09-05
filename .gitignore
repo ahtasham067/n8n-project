@@ -2,6 +2,15 @@
 .env
 .env.local
 .env.*.local
+.env.docker
+deploy/.env
+
+# Runtime state from start-n8n-whatsapp.sh (tunnel PID/log)
+.run/
+
+# Local backups (volume tarballs, legacy exports — may contain PII)
+backups/*.tar.gz
+backups/*.json
 
 # Generated n8n credential overwrite payload (contains secrets)
 config/credentials-overwrite.json
@@ -9,3 +18,4 @@ config/credentials-overwrite.json
 /scripts
 /config
 /lib
+/deploy

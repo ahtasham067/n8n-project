@@ -1,0 +1,26 @@
+# Local n8n for SmileCare WhatsApp booking.
+# Shares appointments with Dentalclinic-dashboard via host Supabase (PostgREST).
+#
+# Prerequisite: `npx supabase start` in Dentalclinic-dashboard
+# Start:        ./start-n8n-whatsapp.sh
+# Env:          .env.docker (see .env.example; do not commit secrets)
+
+name: smilecare-n8n
+services:
+  n8n:
+    image: docker.n8n.io/n8nio/n8n
+    container_name: n8n
+    restart: unless-stopped
+    ports:
+      - "5678:5678"
+    env_file:
+      - .env.docker
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - n8n_data:/home/node/.n8n
+
+volumes:
+  n8n_data:
+    external: true
+    name: n8n_data

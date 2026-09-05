@@ -16,59 +16,66 @@
       "type": "n8n-nodes-base.executeWorkflowTrigger",
       "typeVersion": 1.2,
       "position": [
-        48,
-        48
+        0,
+        0
       ]
     },
     {
       "parameters": {
-        "operation": "get",
-        "dataTableId": {
-          "__rl": true,
-          "mode": "id",
-          "value": "1tLS1N4K93xGHwfs"
-        },
-        "matchType": "allConditions",
-        "filters": {
-          "conditions": [
+        "method": "GET",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/appointments?clinic_id=eq.CLINIC-SMILECARE&phone_number=eq.{{ $json.phone_number }}&status=in.(booked,confirmed)&select=*&order=appointment_date.asc",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
             {
-              "keyName": "phone_number",
-              "keyValue": "={{ $json.phone_number }}"
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
             },
             {
-              "keyName": "status",
-              "keyValue": "booked"
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
             }
           ]
         },
-        "returnAll": true
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
       },
       "id": "7949ae8b-8208-44c3-8c59-c4a66747d955",
       "name": "Get Appointments By Phone",
-      "type": "n8n-nodes-base.dataTable",
-      "typeVersion": 1.1,
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
       "position": [
-        272,
-        48
+        280,
+        0
       ],
+      "onError": "continueRegularOutput",
       "alwaysOutputData": true
     },
     {
       "parameters": {
-        "jsCode": "// --- Clinic time formatting (presentation layer only; DB stores HH:mm) ---\nconst CLINIC_TIMEZONE = 'Asia/Karachi';\n\nfunction parseClinicTime(raw) {\n  if (raw == null || raw === '') return null;\n  const s = String(raw).trim().replace(/\\s+/g, ' ');\n  const zone = CLINIC_TIMEZONE;\n  const formats = ['HH:mm', 'H:mm', 'HH:mm:ss', 'H:mm:ss', 'h:mm a', 'h:mma', 'hh:mm a', 'hh:mma', 'h a', 'ha', 'h:mm:ss a'];\n  for (const fmt of formats) {\n    const dt = DateTime.fromFormat(s, fmt, { zone, locale: 'en' });\n    if (dt.isValid) return dt;\n  }\n  const iso = DateTime.fromISO(s, { zone });\n  if (iso.isValid && /T|\\d:\\d/.test(s)) return iso;\n  return null;\n}\n\nfunction toStoredTime(raw) {\n  const dt = parseClinicTime(raw);\n  return dt ? dt.toFormat('HH:mm') : null;\n}\n\nfunction formatTime12h(raw) {\n  const dt = parseClinicTime(raw);\n  if (!dt) return raw;\n  return dt.setLocale('en-US').toFormat('h:mm a').replace(/\\b(am|pm)\\b/gi, (m) => m.toUpperCase());\n}\n\nfunction clinicNow() {\n  return DateTime.now().setZone(CLINIC_TIMEZONE);\n}\n\nfunction formatDateDisplay(isoOrDate) {\n  const raw = String(isoOrDate || '').trim();\n  const datePart = raw.includes('T') ? raw.split('T')[0] : raw.slice(0, 10);\n  const dt = DateTime.fromISO(datePart, { zone: CLINIC_TIMEZONE });\n  return dt.isValid ? dt.toFormat('MMMM d, yyyy') : raw;\n}\n// --- end clinic time formatting ---\n\nconst items = $input.all().filter(i => i.json && i.json.appointment_id);\n\nif (items.length === 0) {\n  return [{ json: { success: true, found: false, message: 'No active appointments were found for this phone number.' } }];\n}\n\nconst appointments = items.map(i => ({\n  appointment_id: i.json.appointment_id,\n  doctor_name: i.json.doctor_name,\n  appointment_date: i.json.appointment_date,\n  appointment_time: toStoredTime(i.json.appointment_time) || i.json.appointment_time,\n  appointment_date_display: formatDateDisplay(i.json.appointment_date),\n  appointment_time_display: formatTime12h(i.json.appointment_time),\n  status: i.json.status,\n  timezone: CLINIC_TIMEZONE\n}));\n\nconst summary = appointments.map(a => a.doctor_name + ' on ' + a.appointment_date_display + ' at ' + a.appointment_time_display + ' (ID: ' + a.appointment_id + ')').join('; ');\n\nreturn [{ json: { success: true, found: true, appointments, timezone: CLINIC_TIMEZONE, message: 'Active appointments: ' + summary } }];\n"
+        "jsCode": "// --- Clinic time formatting (presentation layer only; DB stores HH:mm) ---\nconst CLINIC_TIMEZONE = 'Asia/Karachi';\n\nfunction parseClinicTime(raw) {\n  if (raw == null || raw === '') return null;\n  const s = String(raw).trim().replace(/\\s+/g, ' ');\n  const zone = CLINIC_TIMEZONE;\n  const formats = ['HH:mm', 'H:mm', 'HH:mm:ss', 'H:mm:ss', 'h:mm a', 'h:mma', 'hh:mm a', 'hh:mma', 'h a', 'ha', 'h:mm:ss a'];\n  for (const fmt of formats) {\n    const dt = DateTime.fromFormat(s, fmt, { zone, locale: 'en' });\n    if (dt.isValid) return dt;\n  }\n  const iso = DateTime.fromISO(s, { zone });\n  if (iso.isValid && /T|\\d:\\d/.test(s)) return iso;\n  return null;\n}\n\nfunction toStoredTime(raw) {\n  const dt = parseClinicTime(raw);\n  return dt ? dt.toFormat('HH:mm') : null;\n}\n\nfunction formatTime12h(raw) {\n  const dt = parseClinicTime(raw);\n  if (!dt) return raw;\n  return dt.setLocale('en-US').toFormat('h:mm a').replace(/\\b(am|pm)\\b/gi, (m) => m.toUpperCase());\n}\n\nfunction clinicNow() {\n  return DateTime.now().setZone(CLINIC_TIMEZONE);\n}\n\nfunction formatDateDisplay(isoOrDate) {\n  const raw = String(isoOrDate || '').trim();\n  const datePart = raw.includes('T') ? raw.split('T')[0] : raw.slice(0, 10);\n  const dt = DateTime.fromISO(datePart, { zone: CLINIC_TIMEZONE });\n  return dt.isValid ? dt.toFormat('MMMM d, yyyy') : raw;\n}\n// --- end clinic time formatting ---\n\n\nfunction rowsFrom(nodeName) {\n  const items = $(nodeName).all();\n  const out = [];\n  for (const item of items) {\n    const j = item.json;\n    if (Array.isArray(j)) {\n      for (const row of j) out.push(row);\n    } else if (j && typeof j === 'object') {\n      // empty object / error body without id fields\n      if (j.doctor_id || j.appointment_id || j.clinic_id) out.push(j);\n      else if (Array.isArray(j.body)) {\n        for (const row of j.body) out.push(row);\n      }\n    }\n  }\n  return out;\n}\n\nconst items = rowsFrom('Get Appointments By Phone').filter(i => i.appointment_id).map(i => ({ json: i }));\n\nif (items.length === 0) {\n  return [{ json: { success: true, found: false, message: 'No active appointments were found for this phone number.' } }];\n}\n\nconst appointments = items.map(i => ({\n  appointment_id: i.json.appointment_id,\n  doctor_name: i.json.doctor_name,\n  appointment_date: i.json.appointment_date,\n  appointment_time: toStoredTime(i.json.appointment_time) || i.json.appointment_time,\n  appointment_date_display: formatDateDisplay(i.json.appointment_date),\n  appointment_time_display: formatTime12h(i.json.appointment_time),\n  status: i.json.status,\n  timezone: CLINIC_TIMEZONE\n}));\n\nconst summary = appointments.map(a => a.doctor_name + ' on ' + a.appointment_date_display + ' at ' + a.appointment_time_display + ' (ID: ' + a.appointment_id + ')').join('; ');\n\nreturn [{ json: { success: true, found: true, appointments, timezone: CLINIC_TIMEZONE, message: 'Active appointments: ' + summary } }];\n"
       },
       "id": "c5bafa86-ebeb-4a48-b60b-71880bfc61f9",
       "name": "Format Appointment Info",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        496,
-        48
+        560,
+        0
       ]
     },
     {
       "parameters": {
-        "content": "## Tool: Get Appointment\nLooks up all active (booked) appointments for a given WhatsApp phone number.",
+        "content": "## Tool: Get Appointment\nLooks up active (booked/confirmed) appointments in Supabase by WhatsApp phone number.",
         "height": 200,
         "width": 300
       },
@@ -78,7 +85,7 @@
       "typeVersion": 1,
       "position": [
         0,
-        0
+        -260
       ]
     }
   ],

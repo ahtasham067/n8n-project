@@ -1,0 +1,71 @@
+{
+  "name": "Tool - Cancel All Appointments",
+  "nodes": [
+    {
+      "parameters": {
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "phone_number"
+            }
+          ]
+        }
+      },
+      "id": "a1-trigger-cancel-all",
+      "name": "Execute Workflow Trigger",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const CLINIC_TIMEZONE = 'Asia/Karachi';\nconst CANCELLATION_CUTOFF_MINUTES = 15;\nconst phone = $('Execute Workflow Trigger').first().json.phone_number;\nconst base = $env.SUPABASE_URL;\nconst key = $env.SUPABASE_SERVICE_ROLE_KEY;\nconst headers = {\n  apikey: key,\n  Authorization: 'Bearer ' + key,\n  'Content-Type': 'application/json',\n  Prefer: 'return=representation',\n};\n\nfunction formatTime12h(raw) {\n  const s = String(raw || '').trim();\n  const dt = DateTime.fromFormat(s, 'HH:mm', { zone: CLINIC_TIMEZONE, locale: 'en' });\n  if (!dt.isValid) return s;\n  return dt.setLocale('en-US').toFormat('h:mm a').replace(/\\b(am|pm)\\b/gi, (m) => m.toUpperCase());\n}\n\nfunction formatDateDisplay(isoOrDate) {\n  const raw = String(isoOrDate || '').trim();\n  const datePart = raw.includes('T') ? raw.split('T')[0] : raw.slice(0, 10);\n  const dt = DateTime.fromISO(datePart, { zone: CLINIC_TIMEZONE });\n  return dt.isValid ? dt.toFormat('MMMM d, yyyy') : raw;\n}\n\nconst rows = await this.helpers.httpRequest({\n  method: 'GET',\n  url: `${base}/rest/v1/appointments?clinic_id=eq.CLINIC-SMILECARE&phone_number=eq.${encodeURIComponent(phone)}&status=in.(booked,confirmed)&select=*&order=appointment_date.asc`,\n  headers,\n  json: true,\n});\n\nconst appointments = Array.isArray(rows) ? rows : [];\nif (!appointments.length) {\n  return [{ json: { success: true, cancelled_count: 0, message: 'No active appointments were found for this phone number.' } }];\n}\n\nconst now = DateTime.now().setZone(CLINIC_TIMEZONE);\nconst cancelled = [];\nconst skipped = [];\nconst failed = [];\n\nfor (const appt of appointments) {\n  const datePart = String(appt.appointment_date || '').includes('T')\n    ? DateTime.fromISO(appt.appointment_date, { zone: CLINIC_TIMEZONE }).toFormat('yyyy-MM-dd')\n    : String(appt.appointment_date || '').slice(0, 10);\n  const timePart = String(appt.appointment_time || '').slice(0, 5);\n  const apptDateTime = DateTime.fromFormat(`${datePart} ${timePart}`, 'yyyy-MM-dd HH:mm', { zone: CLINIC_TIMEZONE });\n  const label = `${formatDateDisplay(appt.appointment_date)} at ${formatTime12h(appt.appointment_time)} (${appt.appointment_id})`;\n\n  if (apptDateTime.isValid) {\n    const minutesUntil = apptDateTime.diff(now, 'minutes').minutes;\n    if (minutesUntil <= 0) {\n      skipped.push(`${label}: already passed`);\n      continue;\n    }\n    if (minutesUntil <= CANCELLATION_CUTOFF_MINUTES) {\n      skipped.push(`${label}: too close to appointment time`);\n      continue;\n    }\n  }\n\n  try {\n    await this.helpers.httpRequest({\n      method: 'PATCH',\n      url: `${base}/rest/v1/appointments?clinic_id=eq.CLINIC-SMILECARE&appointment_id=eq.${encodeURIComponent(appt.appointment_id)}`,\n      headers,\n      body: { status: 'cancelled' },\n      json: true,\n    });\n    cancelled.push(label);\n  } catch (e) {\n    failed.push(`${label}: could not cancel`);\n  }\n}\n\nconst parts = [];\nif (cancelled.length) {\n  parts.push(`Cancelled ${cancelled.length} appointment(s):\\n- ${cancelled.join('\\n- ')}`);\n}\nif (skipped.length) {\n  parts.push(`Skipped ${skipped.length} appointment(s):\\n- ${skipped.join('\\n- ')}`);\n}\nif (failed.length) {\n  parts.push(`Could not cancel ${failed.length} appointment(s):\\n- ${failed.join('\\n- ')}`);\n}\nif (!parts.length) {\n  parts.push('No appointments could be cancelled.');\n}\n\nreturn [{\n  json: {\n    success: cancelled.length > 0,\n    cancelled_count: cancelled.length,\n    skipped_count: skipped.length,\n    failed_count: failed.length,\n    message: parts.join('\\n\\n'),\n  },\n}];\n"
+      },
+      "id": "a2-cancel-all-code",
+      "name": "Cancel All For Phone",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        280,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## Tool: Cancel All Appointments\nCancels all active future appointments for a phone number in one call (avoids multi-LLM cancel loops).",
+        "height": 180,
+        "width": 360
+      },
+      "id": "a3-sticky",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
+        -260
+      ]
+    }
+  ],
+  "connections": {
+    "Execute Workflow Trigger": {
+      "main": [
+        [
+          {
+            "node": "Cancel All For Phone",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": true
+  },
+  "id": "CaA1lAppt0000001"
+}

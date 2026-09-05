@@ -28,87 +28,101 @@
       "type": "n8n-nodes-base.executeWorkflowTrigger",
       "typeVersion": 1.2,
       "position": [
-        48,
-        144
+        0,
+        0
       ]
     },
     {
       "parameters": {
-        "operation": "get",
-        "dataTableId": {
-          "__rl": true,
-          "mode": "id",
-          "value": "gC8JDQIgpzSnxdTl"
-        },
-        "matchType": "allConditions",
-        "filters": {
-          "conditions": [
+        "method": "GET",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/doctors?clinic_id=eq.CLINIC-SMILECARE&doctor_id=eq.{{ $json.doctor_id }}&select=*",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
             {
-              "keyName": "doctor_id",
-              "keyValue": "={{ $json.doctor_id }}"
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
             }
           ]
         },
-        "returnAll": true
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
       },
       "id": "b12ef1bb-0730-4148-829f-9cb74425ac3d",
       "name": "Get Doctor",
-      "type": "n8n-nodes-base.dataTable",
-      "typeVersion": 1.1,
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
       "position": [
-        272,
-        144
+        280,
+        0
       ],
+      "onError": "continueRegularOutput",
       "alwaysOutputData": true
     },
     {
       "parameters": {
-        "operation": "get",
-        "dataTableId": {
-          "__rl": true,
-          "mode": "id",
-          "value": "1tLS1N4K93xGHwfs"
-        },
-        "matchType": "allConditions",
-        "filters": {
-          "conditions": [
+        "method": "GET",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/appointments?clinic_id=eq.CLINIC-SMILECARE&doctor_id=eq.{{ $('Execute Workflow Trigger').item.json.doctor_id }}&appointment_date=eq.{{ $('Execute Workflow Trigger').item.json.appointment_date }}&status=neq.cancelled&select=*",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
             {
-              "keyName": "doctor_id",
-              "keyValue": "={{ $('Execute Workflow Trigger').item.json.doctor_id }}"
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
             },
             {
-              "keyName": "appointment_date",
-              "keyValue": "={{ $('Execute Workflow Trigger').item.json.appointment_date }}"
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $env.SUPABASE_SERVICE_ROLE_KEY }}"
             },
             {
-              "keyName": "status",
-              "keyValue": "booked"
+              "name": "Content-Type",
+              "value": "application/json"
             }
           ]
         },
-        "returnAll": true
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
       },
       "id": "4dfd881a-de95-4fd5-8546-0a9b5d85cf7a",
       "name": "Get Conflicting Appointment",
-      "type": "n8n-nodes-base.dataTable",
-      "typeVersion": 1.1,
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
       "position": [
-        496,
-        144
+        560,
+        0
       ],
+      "onError": "continueRegularOutput",
       "alwaysOutputData": true
     },
     {
       "parameters": {
-        "jsCode": "// --- Clinic time formatting (presentation layer only; DB stores HH:mm) ---\nconst CLINIC_TIMEZONE = 'Asia/Karachi';\n\nfunction parseClinicTime(raw) {\n  if (raw == null || raw === '') return null;\n  const s = String(raw).trim().replace(/\\s+/g, ' ');\n  const zone = CLINIC_TIMEZONE;\n  const formats = ['HH:mm', 'H:mm', 'HH:mm:ss', 'H:mm:ss', 'h:mm a', 'h:mma', 'hh:mm a', 'hh:mma', 'h a', 'ha', 'h:mm:ss a'];\n  for (const fmt of formats) {\n    const dt = DateTime.fromFormat(s, fmt, { zone, locale: 'en' });\n    if (dt.isValid) return dt;\n  }\n  const iso = DateTime.fromISO(s, { zone });\n  if (iso.isValid && /T|\\d:\\d/.test(s)) return iso;\n  return null;\n}\n\nfunction toStoredTime(raw) {\n  const dt = parseClinicTime(raw);\n  return dt ? dt.toFormat('HH:mm') : null;\n}\n\nfunction formatTime12h(raw) {\n  const dt = parseClinicTime(raw);\n  if (!dt) return raw;\n  return dt.setLocale('en-US').toFormat('h:mm a').replace(/\\b(am|pm)\\b/gi, (m) => m.toUpperCase());\n}\n\nfunction clinicNow() {\n  return DateTime.now().setZone(CLINIC_TIMEZONE);\n}\n\nfunction formatDateDisplay(isoOrDate) {\n  const raw = String(isoOrDate || '').trim();\n  const datePart = raw.includes('T') ? raw.split('T')[0] : raw.slice(0, 10);\n  const dt = DateTime.fromISO(datePart, { zone: CLINIC_TIMEZONE });\n  return dt.isValid ? dt.toFormat('MMMM d, yyyy') : raw;\n}\n// --- end clinic time formatting ---\n\nconst doctorItems = $('Get Doctor').all();\nconst doctor = doctorItems[0] ? doctorItems[0].json : null;\nconst trigger = $('Execute Workflow Trigger').first().json;\n\nif (!doctor || !doctor.doctor_id) {\n  return [{ json: { canBook: false, message: 'No doctor found with ID ' + trigger.doctor_id + '. Please check the doctor ID and try again.' } }];\n}\n\nconst doctorLabel = doctor.doctor_name;\nconst workingDays = (doctor.working_days || '').split(',').map(d => d.trim()).filter(Boolean);\nconst dt = DateTime.fromISO(trigger.appointment_date, { zone: CLINIC_TIMEZONE });\nif (!dt.isValid) {\n  return [{ json: { canBook: false, message: 'The date ' + trigger.appointment_date + ' is not valid. Please use YYYY-MM-DD format.' } }];\n}\nconst weekdayMap = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];\nconst weekdayName = weekdayMap[dt.weekday - 1];\nif (!workingDays.includes(weekdayName)) {\n  return [{ json: { canBook: false, message: doctorLabel + ' does not work on ' + weekdayName + '. Working days are: ' + workingDays.join(', ') + '.' } }];\n}\n\nconst appointmentTime = toStoredTime(trigger.appointment_time);\nif (!appointmentTime) {\n  return [{ json: { canBook: false, message: 'The time ' + trigger.appointment_time + ' is not valid. Please choose a slot from the available list.' } }];\n}\n\nconst [startStr, endStr] = (doctor.working_hours || '09:00-17:00').split('-');\nconst duration = doctor.slot_duration_minutes || 30;\nlet slotCursor = DateTime.fromFormat(startStr.trim(), 'HH:mm', { zone: CLINIC_TIMEZONE });\nconst end = DateTime.fromFormat(endStr.trim(), 'HH:mm', { zone: CLINIC_TIMEZONE });\nconst allSlots = [];\nwhile (slotCursor.isValid && end.isValid && slotCursor < end) {\n  allSlots.push(slotCursor.toFormat('HH:mm'));\n  slotCursor = slotCursor.plus({ minutes: duration });\n}\nif (!allSlots.includes(appointmentTime)) {\n  return [{ json: { canBook: false, message: formatTime12h(appointmentTime) + ' is not a valid slot for ' + doctorLabel + '. Please choose an available time from CheckDoctorAvailability.' } }];\n}\n\nconst conflictItems = $input.all().filter(i => i.json && i.json.appointment_id && toStoredTime(i.json.appointment_time) === appointmentTime);\nif (conflictItems.length > 0) {\n  const dateDisplay = formatDateDisplay(trigger.appointment_date);\n  return [{ json: { canBook: false, message: 'Sorry, ' + doctorLabel + ' is already booked at ' + formatTime12h(appointmentTime) + ' on ' + dateDisplay + '. Please choose another slot.' } }];\n}\n\nconst appointmentId = 'APT-' + Date.now().toString().slice(-8);\nreturn [{ json: {\n  canBook: true,\n  appointment_id: appointmentId,\n  doctor_id: trigger.doctor_id,\n  doctor_name: doctorLabel,\n  patient_name: trigger.patient_name,\n  phone_number: trigger.phone_number,\n  appointment_date: trigger.appointment_date,\n  appointment_time: appointmentTime,\n  appointment_date_display: formatDateDisplay(trigger.appointment_date),\n  appointment_time_display: formatTime12h(appointmentTime),\n  timezone: CLINIC_TIMEZONE\n} }];\n"
+        "jsCode": "// --- Clinic time formatting (presentation layer only; DB stores HH:mm) ---\nconst CLINIC_TIMEZONE = 'Asia/Karachi';\n\nfunction parseClinicTime(raw) {\n  if (raw == null || raw === '') return null;\n  const s = String(raw).trim().replace(/\\s+/g, ' ');\n  const zone = CLINIC_TIMEZONE;\n  const formats = ['HH:mm', 'H:mm', 'HH:mm:ss', 'H:mm:ss', 'h:mm a', 'h:mma', 'hh:mm a', 'hh:mma', 'h a', 'ha', 'h:mm:ss a'];\n  for (const fmt of formats) {\n    const dt = DateTime.fromFormat(s, fmt, { zone, locale: 'en' });\n    if (dt.isValid) return dt;\n  }\n  const iso = DateTime.fromISO(s, { zone });\n  if (iso.isValid && /T|\\d:\\d/.test(s)) return iso;\n  return null;\n}\n\nfunction toStoredTime(raw) {\n  const dt = parseClinicTime(raw);\n  return dt ? dt.toFormat('HH:mm') : null;\n}\n\nfunction formatTime12h(raw) {\n  const dt = parseClinicTime(raw);\n  if (!dt) return raw;\n  return dt.setLocale('en-US').toFormat('h:mm a').replace(/\\b(am|pm)\\b/gi, (m) => m.toUpperCase());\n}\n\nfunction clinicNow() {\n  return DateTime.now().setZone(CLINIC_TIMEZONE);\n}\n\nfunction formatDateDisplay(isoOrDate) {\n  const raw = String(isoOrDate || '').trim();\n  const datePart = raw.includes('T') ? raw.split('T')[0] : raw.slice(0, 10);\n  const dt = DateTime.fromISO(datePart, { zone: CLINIC_TIMEZONE });\n  return dt.isValid ? dt.toFormat('MMMM d, yyyy') : raw;\n}\n// --- end clinic time formatting ---\n\n\nfunction rowsFrom(nodeName) {\n  const items = $(nodeName).all();\n  const out = [];\n  for (const item of items) {\n    const j = item.json;\n    if (Array.isArray(j)) {\n      for (const row of j) out.push(row);\n    } else if (j && typeof j === 'object') {\n      // empty object / error body without id fields\n      if (j.doctor_id || j.appointment_id || j.clinic_id) out.push(j);\n      else if (Array.isArray(j.body)) {\n        for (const row of j.body) out.push(row);\n      }\n    }\n  }\n  return out;\n}\n\nconst doctorRows = rowsFrom('Get Doctor');\nconst doctor = doctorRows[0] || null;\nconst trigger = $('Execute Workflow Trigger').first().json;\n\nif (!doctor || !doctor.doctor_id) {\n  return [{ json: { canBook: false, message: 'No doctor found with ID ' + trigger.doctor_id + '. Please check the doctor ID and try again.' } }];\n}\n\nconst doctorLabel = doctor.doctor_name;\nconst workingDays = (doctor.working_days || '').split(',').map(d => d.trim()).filter(Boolean);\nconst dt = DateTime.fromISO(trigger.appointment_date, { zone: CLINIC_TIMEZONE });\nif (!dt.isValid) {\n  return [{ json: { canBook: false, message: 'The date ' + trigger.appointment_date + ' is not valid. Please use YYYY-MM-DD format.' } }];\n}\nconst today = clinicNow().startOf('day');\nif (dt.startOf('day') < today) {\n  const todayDisplay = formatDateDisplay(today.toISODate());\n  return [{ json: { canBook: false, message: 'Appointments cannot be booked for past dates. Today is ' + todayDisplay + '. Please choose today or a future date.' } }];\n}\nconst weekdayMap = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];\nconst weekdayName = weekdayMap[dt.weekday - 1];\nif (!workingDays.includes(weekdayName)) {\n  return [{ json: { canBook: false, message: doctorLabel + ' does not work on ' + weekdayName + '. Working days are: ' + workingDays.join(', ') + '.' } }];\n}\n\nconst appointmentTime = toStoredTime(trigger.appointment_time);\nif (!appointmentTime) {\n  return [{ json: { canBook: false, message: 'The time ' + trigger.appointment_time + ' is not valid. Please choose a slot from the available list.' } }];\n}\n\nconst [startStr, endStr] = (doctor.working_hours || '09:00-17:00').split('-');\nconst duration = doctor.slot_duration_minutes || 30;\nlet slotCursor = DateTime.fromFormat(startStr.trim(), 'HH:mm', { zone: CLINIC_TIMEZONE });\nconst end = DateTime.fromFormat(endStr.trim(), 'HH:mm', { zone: CLINIC_TIMEZONE });\nconst allSlots = [];\nwhile (slotCursor.isValid && end.isValid && slotCursor < end) {\n  allSlots.push(slotCursor.toFormat('HH:mm'));\n  slotCursor = slotCursor.plus({ minutes: duration });\n}\nif (!allSlots.includes(appointmentTime)) {\n  return [{ json: { canBook: false, message: formatTime12h(appointmentTime) + ' is not a valid slot for ' + doctorLabel + '. Please choose an available time from CheckDoctorAvailability.' } }];\n}\n\nconst conflictItems = rowsFrom('Get Conflicting Appointment').filter(i => i.appointment_id && toStoredTime(i.appointment_time) === appointmentTime).map(i => ({ json: i }));\nif (conflictItems.length > 0) {\n  const dateDisplay = formatDateDisplay(trigger.appointment_date);\n  return [{ json: { canBook: false, message: 'Sorry, ' + doctorLabel + ' is already booked at ' + formatTime12h(appointmentTime) + ' on ' + dateDisplay + '. Please choose another slot.' } }];\n}\n\nconst appointmentId = 'APT-' + Date.now().toString().slice(-8);\nreturn [{ json: {\n  canBook: true,\n  appointment_id: appointmentId,\n  doctor_id: trigger.doctor_id,\n  doctor_name: doctorLabel,\n  patient_name: trigger.patient_name,\n  phone_number: trigger.phone_number,\n  appointment_date: trigger.appointment_date,\n  appointment_time: appointmentTime,\n  appointment_date_display: formatDateDisplay(trigger.appointment_date),\n  appointment_time_display: formatTime12h(appointmentTime),\n  timezone: CLINIC_TIMEZONE,\n  clinic_id: 'CLINIC-SMILECARE'\n} }];\n"
       },
       "id": "eb8ab796-ffdc-49a0-9e20-04bec5636f0f",
       "name": "Validate Booking",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        720,
-        144
+        840,
+        0
       ]
     },
     {
@@ -140,97 +154,100 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        944,
-        144
+        1120,
+        0
       ]
     },
     {
       "parameters": {
-        "dataTableId": {
-          "__rl": true,
-          "mode": "id",
-          "value": "1tLS1N4K93xGHwfs"
-        },
-        "columns": {
-          "mappingMode": "defineBelow",
-          "value": {
-            "appointment_id": "={{ $json.appointment_id }}",
-            "patient_name": "={{ $json.patient_name }}",
-            "phone_number": "={{ $json.phone_number }}",
-            "doctor_id": "={{ $json.doctor_id }}",
-            "doctor_name": "={{ $json.doctor_name }}",
-            "appointment_date": "={{ $json.appointment_date }}",
-            "appointment_time": "={{ $json.appointment_time }}",
-            "status": "booked"
-          },
-          "schema": [
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/appointments",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
             {
-              "id": "appointment_id",
-              "displayName": "appointment_id",
-              "type": "string",
-              "display": true,
-              "canBeUsedToMatch": true
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
             },
             {
-              "id": "patient_name",
-              "displayName": "patient_name",
-              "type": "string",
-              "display": true,
-              "canBeUsedToMatch": true
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $env.SUPABASE_SERVICE_ROLE_KEY }}"
             },
             {
-              "id": "phone_number",
-              "displayName": "phone_number",
-              "type": "string",
-              "display": true,
-              "canBeUsedToMatch": true
+              "name": "Content-Type",
+              "value": "application/json"
             },
             {
-              "id": "doctor_id",
-              "displayName": "doctor_id",
-              "type": "string",
-              "display": true,
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "doctor_name",
-              "displayName": "doctor_name",
-              "type": "string",
-              "display": true,
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "appointment_date",
-              "displayName": "appointment_date",
-              "type": "string",
-              "display": true,
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "appointment_time",
-              "displayName": "appointment_time",
-              "type": "string",
-              "display": true,
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "status",
-              "displayName": "status",
-              "type": "string",
-              "display": true,
-              "canBeUsedToMatch": true
+              "name": "Prefer",
+              "value": "return=representation"
             }
           ]
         },
-        "options": {}
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ appointment_id: $json.appointment_id, clinic_id: 'CLINIC-SMILECARE', patient_name: $json.patient_name, phone_number: $json.phone_number, doctor_id: $json.doctor_id, doctor_name: $json.doctor_name, appointment_date: $json.appointment_date, appointment_time: $json.appointment_time, status: 'booked' }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
       },
       "id": "7a9b5fda-363f-46e0-85d2-ec4a94a1d1fc",
       "name": "Insert Appointment",
-      "type": "n8n-nodes-base.dataTable",
-      "typeVersion": 1.1,
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
       "position": [
-        1168,
-        48
+        1400,
+        0
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const v = $('Validate Booking').first().json;\nconst raw = $input.first().json;\n\nfunction slotTakenMessage() {\n  return (\n    'Sorry, ' +\n    v.doctor_name +\n    ' is already booked at ' +\n    v.appointment_time_display +\n    ' on ' +\n    v.appointment_date_display +\n    '. Please choose another slot.'\n  );\n}\n\nfunction genericFail() {\n  return 'Could not save the appointment. Please try again in a moment.';\n}\n\nfunction looksLikePostgrestError(j) {\n  if (!j || typeof j !== 'object' || Array.isArray(j)) return false;\n  return Boolean(j.code || j.hint !== undefined || j.details !== undefined || (j.message && !j.appointment_id));\n}\n\nlet body = raw;\nif (raw && typeof raw === 'object' && raw.error && typeof raw.error === 'object') {\n  body = raw.error;\n}\n\nif (Array.isArray(body)) {\n  const row = body[0];\n  if (row && row.appointment_id) {\n    return [{ json: { insertOk: true } }];\n  }\n  return [{ json: { insertOk: false, message: genericFail() } }];\n}\n\nif (body && body.appointment_id && !looksLikePostgrestError(body)) {\n  return [{ json: { insertOk: true } }];\n}\n\nif (looksLikePostgrestError(body)) {\n  const code = String(body.code || '');\n  const msg = String(body.message || '');\n  if (code === '23505' || /duplicate|unique|conflict/i.test(msg)) {\n    return [{ json: { insertOk: false, message: slotTakenMessage() } }];\n  }\n  return [{ json: { insertOk: false, message: genericFail() } }];\n}\n\nreturn [{ json: { insertOk: false, message: genericFail() } }];\n"
+      },
+      "id": "a1b2c3d4-e5f6-7788-9900-aabbccddeeff",
+      "name": "Check Insert Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1680,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.insertOk }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "rightValue": ""
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "b2c3d4e5-f6a7-8899-0011-bbccddeeff00",
+      "name": "Insert OK?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1960,
+        0
       ]
     },
     {
@@ -294,8 +311,8 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.5,
       "position": [
-        1392,
-        48
+        2240,
+        0
       ]
     },
     {
@@ -323,15 +340,15 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.5,
       "position": [
-        1168,
-        240
+        1960,
+        260
       ]
     },
     {
       "parameters": {
-        "content": "## Tool: Book Appointment\nValidates the doctor and slot availability, then inserts a new row into the Appointments data table.",
-        "height": 200,
-        "width": 300
+        "content": "## Tool: Book Appointment\nValidates the doctor and slot, then inserts into Supabase `appointments` (service role). Maps unique-slot conflicts (23505) to a friendly slot-taken message. Requires env SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY.",
+        "height": 220,
+        "width": 320
       },
       "id": "1a513f7f-a9a2-4af6-bcf0-be67812b4b5e",
       "name": "Sticky Note 546c3ec8",
@@ -339,7 +356,7 @@
       "typeVersion": 1,
       "position": [
         0,
-        0
+        -260
       ]
     }
   ],
@@ -410,7 +427,36 @@
       "main": [
         [
           {
+            "node": "Check Insert Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Insert Result": {
+      "main": [
+        [
+          {
+            "node": "Insert OK?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert OK?": {
+      "main": [
+        [
+          {
             "node": "Success Response",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Failure Response",
             "type": "main",
             "index": 0
           }

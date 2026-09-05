@@ -16,50 +16,61 @@
       "type": "n8n-nodes-base.executeWorkflowTrigger",
       "typeVersion": 1.2,
       "position": [
-        48,
-        144
+        0,
+        0
       ]
     },
     {
       "parameters": {
-        "operation": "get",
-        "dataTableId": {
-          "__rl": true,
-          "mode": "id",
-          "value": "1tLS1N4K93xGHwfs"
-        },
-        "matchType": "allConditions",
-        "filters": {
-          "conditions": [
+        "method": "GET",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/appointments?clinic_id=eq.CLINIC-SMILECARE&appointment_id=eq.{{ $json.appointment_id }}&select=*",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
             {
-              "keyName": "appointment_id",
-              "keyValue": "={{ $json.appointment_id }}"
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
             }
           ]
         },
-        "returnAll": true
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
       },
       "id": "7552e6b3-0864-42cb-8470-8560d593e028",
       "name": "Get Appointment",
-      "type": "n8n-nodes-base.dataTable",
-      "typeVersion": 1.1,
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
       "position": [
-        272,
-        144
+        280,
+        0
       ],
+      "onError": "continueRegularOutput",
       "alwaysOutputData": true
     },
     {
       "parameters": {
-        "jsCode": "// --- Clinic time formatting (presentation layer only; DB stores HH:mm) ---\nconst CLINIC_TIMEZONE = 'Asia/Karachi';\n\nfunction parseClinicTime(raw) {\n  if (raw == null || raw === '') return null;\n  const s = String(raw).trim().replace(/\\s+/g, ' ');\n  const zone = CLINIC_TIMEZONE;\n  const formats = ['HH:mm', 'H:mm', 'HH:mm:ss', 'H:mm:ss', 'h:mm a', 'h:mma', 'hh:mm a', 'hh:mma', 'h a', 'ha', 'h:mm:ss a'];\n  for (const fmt of formats) {\n    const dt = DateTime.fromFormat(s, fmt, { zone, locale: 'en' });\n    if (dt.isValid) return dt;\n  }\n  const iso = DateTime.fromISO(s, { zone });\n  if (iso.isValid && /T|\\d:\\d/.test(s)) return iso;\n  return null;\n}\n\nfunction toStoredTime(raw) {\n  const dt = parseClinicTime(raw);\n  return dt ? dt.toFormat('HH:mm') : null;\n}\n\nfunction formatTime12h(raw) {\n  const dt = parseClinicTime(raw);\n  if (!dt) return raw;\n  return dt.setLocale('en-US').toFormat('h:mm a').replace(/\\b(am|pm)\\b/gi, (m) => m.toUpperCase());\n}\n\nfunction clinicNow() {\n  return DateTime.now().setZone(CLINIC_TIMEZONE);\n}\n\nfunction formatDateDisplay(isoOrDate) {\n  const raw = String(isoOrDate || '').trim();\n  const datePart = raw.includes('T') ? raw.split('T')[0] : raw.slice(0, 10);\n  const dt = DateTime.fromISO(datePart, { zone: CLINIC_TIMEZONE });\n  return dt.isValid ? dt.toFormat('MMMM d, yyyy') : raw;\n}\n// --- end clinic time formatting ---\n\nconst CANCELLATION_CUTOFF_MINUTES = 15;\n\nconst items = $input.all();\nconst appt = items[0] ? items[0].json : null;\n\nif (!appt || !appt.appointment_id) {\n  return [{ json: { canCancel: false, message: 'No appointment found with that ID. Please double-check and try again.' } }];\n}\nif (appt.status === 'cancelled') {\n  return [{ json: { canCancel: false, message: 'This appointment has already been cancelled.' } }];\n}\n\nconst datePart = String(appt.appointment_date || '').includes('T') ? DateTime.fromISO(appt.appointment_date, { zone: CLINIC_TIMEZONE }).toFormat('yyyy-MM-dd') : String(appt.appointment_date || '').slice(0, 10);\nconst storedTime = toStoredTime(appt.appointment_time);\nconst apptDateTime = DateTime.fromFormat(datePart + ' ' + storedTime, 'yyyy-MM-dd HH:mm', { zone: CLINIC_TIMEZONE });\nif (apptDateTime.isValid) {\n  const now = clinicNow();\n  const minutesUntil = apptDateTime.diff(now, 'minutes').minutes;\n\n  if (minutesUntil <= 0) {\n    return [{ json: { canCancel: false, message: 'This appointment time has already passed, so it cannot be cancelled.' } }];\n  }\n  if (minutesUntil <= CANCELLATION_CUTOFF_MINUTES) {\n    return [{ json: { canCancel: false, message: 'Sorry, this appointment cannot be cancelled because it is too close to the scheduled time. Cancellation is only allowed up to ' + CANCELLATION_CUTOFF_MINUTES + ' minutes before the appointment.' } }];\n  }\n}\n\nreturn [{ json: {\n  canCancel: true,\n  appointment_id: appt.appointment_id,\n  doctor_name: appt.doctor_name,\n  appointment_date: appt.appointment_date,\n  appointment_time: storedTime || appt.appointment_time,\n  appointment_date_display: formatDateDisplay(appt.appointment_date),\n  appointment_time_display: formatTime12h(appt.appointment_time),\n  timezone: CLINIC_TIMEZONE\n} }];\n"
+        "jsCode": "// --- Clinic time formatting (presentation layer only; DB stores HH:mm) ---\nconst CLINIC_TIMEZONE = 'Asia/Karachi';\n\nfunction parseClinicTime(raw) {\n  if (raw == null || raw === '') return null;\n  const s = String(raw).trim().replace(/\\s+/g, ' ');\n  const zone = CLINIC_TIMEZONE;\n  const formats = ['HH:mm', 'H:mm', 'HH:mm:ss', 'H:mm:ss', 'h:mm a', 'h:mma', 'hh:mm a', 'hh:mma', 'h a', 'ha', 'h:mm:ss a'];\n  for (const fmt of formats) {\n    const dt = DateTime.fromFormat(s, fmt, { zone, locale: 'en' });\n    if (dt.isValid) return dt;\n  }\n  const iso = DateTime.fromISO(s, { zone });\n  if (iso.isValid && /T|\\d:\\d/.test(s)) return iso;\n  return null;\n}\n\nfunction toStoredTime(raw) {\n  const dt = parseClinicTime(raw);\n  return dt ? dt.toFormat('HH:mm') : null;\n}\n\nfunction formatTime12h(raw) {\n  const dt = parseClinicTime(raw);\n  if (!dt) return raw;\n  return dt.setLocale('en-US').toFormat('h:mm a').replace(/\\b(am|pm)\\b/gi, (m) => m.toUpperCase());\n}\n\nfunction clinicNow() {\n  return DateTime.now().setZone(CLINIC_TIMEZONE);\n}\n\nfunction formatDateDisplay(isoOrDate) {\n  const raw = String(isoOrDate || '').trim();\n  const datePart = raw.includes('T') ? raw.split('T')[0] : raw.slice(0, 10);\n  const dt = DateTime.fromISO(datePart, { zone: CLINIC_TIMEZONE });\n  return dt.isValid ? dt.toFormat('MMMM d, yyyy') : raw;\n}\n// --- end clinic time formatting ---\n\nconst CANCELLATION_CUTOFF_MINUTES = 15;\n\n\nfunction rowsFrom(nodeName) {\n  const items = $(nodeName).all();\n  const out = [];\n  for (const item of items) {\n    const j = item.json;\n    if (Array.isArray(j)) {\n      for (const row of j) out.push(row);\n    } else if (j && typeof j === 'object') {\n      // empty object / error body without id fields\n      if (j.doctor_id || j.appointment_id || j.clinic_id) out.push(j);\n      else if (Array.isArray(j.body)) {\n        for (const row of j.body) out.push(row);\n      }\n    }\n  }\n  return out;\n}\n\nconst items = rowsFrom('Get Appointment');\nconst appt = items[0] || null;\n\nif (!appt || !appt.appointment_id) {\n  return [{ json: { canCancel: false, message: 'No appointment found with that ID. Please double-check and try again.' } }];\n}\nif (appt.status === 'cancelled') {\n  return [{ json: { canCancel: false, message: 'This appointment has already been cancelled.' } }];\n}\n\nconst datePart = String(appt.appointment_date || '').includes('T') ? DateTime.fromISO(appt.appointment_date, { zone: CLINIC_TIMEZONE }).toFormat('yyyy-MM-dd') : String(appt.appointment_date || '').slice(0, 10);\nconst storedTime = toStoredTime(appt.appointment_time);\nconst apptDateTime = DateTime.fromFormat(datePart + ' ' + storedTime, 'yyyy-MM-dd HH:mm', { zone: CLINIC_TIMEZONE });\nif (apptDateTime.isValid) {\n  const now = clinicNow();\n  const minutesUntil = apptDateTime.diff(now, 'minutes').minutes;\n\n  if (minutesUntil <= 0) {\n    return [{ json: { canCancel: false, message: 'This appointment time has already passed, so it cannot be cancelled.' } }];\n  }\n  if (minutesUntil <= CANCELLATION_CUTOFF_MINUTES) {\n    return [{ json: { canCancel: false, message: 'Sorry, this appointment cannot be cancelled because it is too close to the scheduled time. Cancellation is only allowed up to ' + CANCELLATION_CUTOFF_MINUTES + ' minutes before the appointment.' } }];\n  }\n}\n\nreturn [{ json: {\n  canCancel: true,\n  appointment_id: appt.appointment_id,\n  doctor_name: appt.doctor_name,\n  appointment_date: appt.appointment_date,\n  appointment_time: storedTime || appt.appointment_time,\n  appointment_date_display: formatDateDisplay(appt.appointment_date),\n  appointment_time_display: formatTime12h(appt.appointment_time),\n  timezone: CLINIC_TIMEZONE\n} }];\n"
       },
       "id": "db752994-1336-422f-a3c7-edf7c329ca3f",
       "name": "Validate Cancellation",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        496,
-        144
+        560,
+        0
       ]
     },
     {
@@ -90,52 +101,55 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        720,
-        144
+        840,
+        0
       ]
     },
     {
       "parameters": {
-        "operation": "update",
-        "dataTableId": {
-          "__rl": true,
-          "mode": "id",
-          "value": "1tLS1N4K93xGHwfs"
-        },
-        "matchType": "allConditions",
-        "filters": {
-          "conditions": [
+        "method": "PATCH",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/appointments?clinic_id=eq.CLINIC-SMILECARE&appointment_id=eq.{{ $json.appointment_id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
             {
-              "keyName": "appointment_id",
-              "keyValue": "={{ $json.appointment_id }}"
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=representation"
             }
           ]
         },
-        "columns": {
-          "mappingMode": "defineBelow",
-          "value": {
-            "status": "cancelled"
-          },
-          "schema": [
-            {
-              "id": "status",
-              "displayName": "status",
-              "type": "string",
-              "display": true,
-              "canBeUsedToMatch": true
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ status: \"cancelled\" }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
             }
-          ]
-        },
-        "options": {}
+          }
+        }
       },
       "id": "8c30a48b-9b95-4dfd-b40d-8a1ff6c5be52",
       "name": "Update Appointment Status",
-      "type": "n8n-nodes-base.dataTable",
-      "typeVersion": 1.1,
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
       "position": [
-        944,
-        48
-      ]
+        1120,
+        0
+      ],
+      "onError": "continueRegularOutput"
     },
     {
       "parameters": {
@@ -168,8 +182,8 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.5,
       "position": [
-        1168,
-        48
+        1400,
+        0
       ]
     },
     {
@@ -197,13 +211,13 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.5,
       "position": [
-        944,
-        240
+        840,
+        260
       ]
     },
     {
       "parameters": {
-        "content": "## Tool: Cancel Appointment\nLooks up the appointment by ID and marks it cancelled if it exists and is not already cancelled.",
+        "content": "## Tool: Cancel Appointment\nLooks up the appointment in Supabase and sets status=cancelled. Requires SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY.",
         "height": 200,
         "width": 300
       },
@@ -213,7 +227,7 @@
       "typeVersion": 1,
       "position": [
         0,
-        0
+        -260
       ]
     }
   ],
