@@ -1,0 +1,14 @@
+# Replace smilecare-n8n with your DuckDNS subdomain (no https:// prefix).
+# Caddy obtains and renews Let's Encrypt certificates automatically.
+# Requires: DuckDNS A record → VM public IP, and TCP 80/443 open
+# (Oracle Security List + Ubuntu iptables — see Dentalclinic-dashboard/DEPLOYMENT.md).
+
+smilecare-n8n.duckdns.org {
+	reverse_proxy n8n:5678
+
+	encode gzip
+
+	log {
+		output file /data/access.log
+	}
+}

@@ -5,8 +5,12 @@
       "parameters": {
         "workflowInputs": {
           "values": [
-            { "name": "doctor_id" },
-            { "name": "preferred_date" }
+            {
+              "name": "doctor_id"
+            },
+            {
+              "name": "preferred_date"
+            }
           ]
         }
       },
@@ -14,7 +18,10 @@
       "name": "Execute Workflow Trigger",
       "type": "n8n-nodes-base.executeWorkflowTrigger",
       "typeVersion": 1.2,
-      "position": [0, 0]
+      "position": [
+        0,
+        0
+      ]
     },
     {
       "parameters": {
@@ -23,9 +30,18 @@
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
-            { "name": "Authorization", "value": "={{ 'Bearer ' + $env.SUPABASE_SERVICE_ROLE_KEY }}" },
-            { "name": "Content-Type", "value": "application/json" }
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
           ]
         },
         "sendBody": true,
@@ -43,19 +59,25 @@
       "name": "RPC get_available_slots",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [280, 0],
+      "position": [
+        280,
+        0
+      ],
       "onError": "continueRegularOutput",
       "alwaysOutputData": true
     },
     {
       "parameters": {
-        "jsCode": "const trigger = $('Execute Workflow Trigger').first().json;\nconst rpc = $input.first().json;\n\nif (rpc.error || rpc.code) {\n  return [{ json: {\n    success: false,\n    error_type: 'database_failure',\n    message: 'Sorry, I am having trouble checking appointment availability right now. Please try again in a few minutes.'\n  } }];\n}\n\nreturn [{ json: {\n  success: rpc.success !== false,\n  doctor_id: trigger.doctor_id,\n  doctor_name: rpc.doctor_name,\n  date: trigger.preferred_date,\n  timezone: rpc.timezone,\n  available_slots: rpc.available_slots || [],\n  available_slots_display: rpc.available_slots_display || [],\n  booked_slots: rpc.booked_slots || [],\n  message: rpc.message\n} }];"
+        "jsCode": "const trigger = $('Execute Workflow Trigger').first().json;\nconst rpc = $input.first().json;\n\nif (rpc.error || rpc.code) {\n  return [{ json: {\n    success: false,\n    error_type: 'database_failure',\n    message: 'Sorry, I am having trouble checking appointment availability right now. Please try again in a few minutes.'\n  } }];\n}\n\nreturn [{ json: {\n  success: rpc.success !== false,\n  doctor_id: trigger.doctor_id,\n  doctor_name: rpc.doctor_name,\n  date: trigger.preferred_date,\n  timezone: rpc.timezone,\n  available_slots: rpc.available_slots || [],\n  available_slots_display: rpc.available_slots_display || [],\n  booked_slots: rpc.booked_slots || [],\n  available_slots_windows: rpc.available_slots_windows || [],\n  message: rpc.message\n} }];"
       },
       "id": "a1557c55-08c9-4bc2-b503-ce02cdb00f52",
       "name": "Format RPC Response",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [560, 0]
+      "position": [
+        560,
+        0
+      ]
     },
     {
       "parameters": {
@@ -67,15 +89,34 @@
       "name": "Sticky Note aff4940b",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
-      "position": [0, -260]
+      "position": [
+        0,
+        -260
+      ]
     }
   ],
   "connections": {
     "Execute Workflow Trigger": {
-      "main": [[{ "node": "RPC get_available_slots", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "RPC get_available_slots",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "RPC get_available_slots": {
-      "main": [[{ "node": "Format RPC Response", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Format RPC Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "settings": {

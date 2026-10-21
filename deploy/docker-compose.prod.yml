@@ -1,0 +1,56 @@
+# Cloud / testing Compose for SmileCare n8n (Oracle Always Free VM).
+# Local development continues to use ../docker-compose.yml + ./start-n8n-whatsapp.sh
+#
+# NEVER run ./start-n8n-whatsapp.sh on this host — it overwrites WEBHOOK_URL with a tunnel.
+#
+# Usage on the VM:
+#   cp .env.production.example .env   # fill values; chmod 600 .env
+#   # restore n8n_data volume first (see migrate-n8n-volume.sh)
+#   docker compose -f docker-compose.prod.yml up -d
+
+name: smilecare-n8n-prod
+
+services:
+  n8n:
+    # Pin to the schema that wrote your n8n_data volume (laptop was 2.34.6).
+    # Do not use :latest on first cloud boot — upgrades migrate SQLite irreversibly.
+    image: docker.n8n.io/n8nio/n8n:2.34.6
+    container_name: n8n
+    restart: unless-stopped
+    ports:
+      # Loopback only — Caddy terminates TLS on 80/443. Never publish 5678 publicly.
+      - "127.0.0.1:5678:5678"
+    env_file:
+      - .env
+    volumes:
+      - n8n_data:/home/node/.n8n
+    networks:
+      - smilecare
+    # No extra_hosts / host.docker.internal — Supabase is cloud HTTPS.
+
+  caddy:
+    image: caddy:2
+    container_name: caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - smilecare
+    depends_on:
+      - n8n
+
+volumes:
+  n8n_data:
+    external: true
+    name: n8n_data
+  caddy_data:
+  caddy_config:
+
+networks:
+  smilecare:
+    driver: bridge

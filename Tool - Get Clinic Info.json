@@ -1,0 +1,123 @@
+{
+  "name": "Tool - Get Clinic Info",
+  "id": "hgi4PY0JBWmkpQBU",
+  "nodes": [
+    {
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "id": "fd3933c4-c775-4023-8bf2-c70ed89b844b",
+      "name": "Execute Workflow Trigger",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/rpc/get_clinic_runtime_config",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ p_clinic_id: $env.CLINIC_ID || 'CLINIC-SMILECARE' }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "a50db551-19c5-47de-8947-0e17043ed339",
+      "name": "RPC get_clinic_runtime_config",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        280,
+        0
+      ],
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const rpc = $input.first().json;\n\nif (rpc.error) {\n  return [{ json: {\n    success: false,\n    error_type: rpc.error === 'clinic_not_found' ? 'clinic_not_found' : 'database_failure',\n    message: 'Sorry, I could not look up the clinic location right now. Please try again shortly.'\n  } }];\n}\n\nconst hasAddress = Boolean(rpc.address_text && String(rpc.address_text).trim());\n\nif (!hasAddress) {\n  return [{ json: {\n    success: true,\n    configured: false,\n    clinic_name: rpc.clinic_name,\n    message: 'Location is not configured for this clinic yet. Ask the patient to contact the clinic directly for directions.'\n  } }];\n}\n\nreturn [{ json: {\n  success: true,\n  configured: true,\n  clinic_name: rpc.clinic_name,\n  address_text: rpc.address_text,\n  maps_url: rpc.maps_url || null,\n  landmark_note: rpc.landmark_note || null,\n  message: [\n    rpc.clinic_name,\n    rpc.address_text,\n    rpc.landmark_note ? ('Landmark: ' + rpc.landmark_note) : null,\n    rpc.maps_url ? ('Maps: ' + rpc.maps_url) : null\n  ].filter(Boolean).join('\\n')\n} }];"
+      },
+      "id": "09d82c25-87ae-43e1-a18a-0fa92520573f",
+      "name": "Format RPC Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        560,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## Tool: Get Clinic Info\nCalls Postgres RPC get_clinic_runtime_config (no input needed). Returns clinic name, address, Google Maps link, and landmark note so the agent can answer \"where are you located / what's your address / send me the map\" requests. Set CLINIC_ID env per deployment.",
+        "height": 220,
+        "width": 320
+      },
+      "id": "b1e0f7a2-2f7b-4b0e-9c2a-6a2a2f4a9d10",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
+        -280
+      ]
+    }
+  ],
+  "connections": {
+    "Execute Workflow Trigger": {
+      "main": [
+        [
+          {
+            "node": "RPC get_clinic_runtime_config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "RPC get_clinic_runtime_config": {
+      "main": [
+        [
+          {
+            "node": "Format RPC Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": true,
+    "timeSavedMode": "fixed",
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "staticData": null,
+  "pinData": {}
+}

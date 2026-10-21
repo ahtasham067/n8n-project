@@ -1,0 +1,184 @@
+{
+  "name": "Send Notification",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "send-notification",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "1e5e4d68-e94e-4936-98f7-98d394446eea",
+      "name": "Notification Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "3e131cfc-842a-45c0-a9bb-df3406bf2e25"
+    },
+    {
+      "parameters": {
+        "jsCode": "const headers = $input.first().json.headers || {};\nconst body = $input.first().json.body || {};\nconst expected = $env.N8N_NOTIFY_SHARED_SECRET || '';\nconst provided = headers['x-notify-secret'] || headers['X-Notify-Secret'] || '';\n\nif (!expected || provided !== expected) {\n  return [{ json: { ok: false, status: 401, error: 'Unauthorized' } }];\n}\n\nconst phone = String(body.phone || '').trim();\nconst message = String(body.message || '').trim();\nif (!phone || !message) {\n  return [{ json: { ok: false, status: 400, error: 'phone and message are required' } }];\n}\n\nreturn [{ json: { ok: true, phone, message } }];\n"
+      },
+      "id": "f5765044-e55e-48c4-b120-c6f238685696",
+      "name": "Validate Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.ok }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "rightValue": ""
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "64980d37-96d7-4038-8a7a-2c939668a2de",
+      "name": "Authorized?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        440,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "send",
+        "phoneNumberId": "={{ $env.WHATSAPP_PHONE_NUMBER_ID }}",
+        "recipientPhoneNumber": "={{ $json.phone }}",
+        "textBody": "={{ $json.message }}",
+        "additionalFields": {}
+      },
+      "id": "176fc476-a570-4fff-9840-ad25dd5d0d4c",
+      "name": "Send WhatsApp Notification",
+      "type": "n8n-nodes-base.whatsApp",
+      "typeVersion": 1.1,
+      "position": [
+        660,
+        -80
+      ],
+      "webhookId": "7bbf6a0a-cb30-47f8-8619-b9bbdd0132ea",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "credentials": {
+        "whatsAppApi": {
+          "id": "aInNdUR5ITd8z3il",
+          "name": "WhatsApp account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: true, phone: $('Validate Request').item.json.phone } }}",
+        "options": {}
+      },
+      "id": "0851d7d6-58bf-4d0f-b743-c0b7a1a013f5",
+      "name": "Respond OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        880,
+        -80
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: false, error: $json.error } }}",
+        "options": {
+          "responseCode": "={{ $json.status || 400 }}"
+        }
+      },
+      "id": "91391a82-4484-4928-a994-7289e20aeb09",
+      "name": "Respond Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        660,
+        80
+      ]
+    }
+  ],
+  "connections": {
+    "Notification Webhook": {
+      "main": [
+        [
+          {
+            "node": "Validate Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Request": {
+      "main": [
+        [
+          {
+            "node": "Authorized?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Authorized?": {
+      "main": [
+        [
+          {
+            "node": "Send WhatsApp Notification",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send WhatsApp Notification": {
+      "main": [
+        [
+          {
+            "node": "Respond OK",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
