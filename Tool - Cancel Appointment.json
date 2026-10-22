@@ -7,6 +7,9 @@
           "values": [
             {
               "name": "appointment_id"
+            },
+            {
+              "name": "phone_number"
             }
           ]
         }
@@ -23,7 +26,7 @@
     {
       "parameters": {
         "method": "GET",
-        "url": "={{ $env.SUPABASE_URL }}/rest/v1/appointments?clinic_id=eq.CLINIC-SMILECARE&appointment_id=eq.{{ $json.appointment_id }}&select=*",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/appointments?clinic_id=eq.CLINIC-SMILECARE&appointment_id=eq.{{ $json.appointment_id }}&phone_number=eq.{{ $json.phone_number }}&select=*",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -108,7 +111,7 @@
     {
       "parameters": {
         "method": "PATCH",
-        "url": "={{ $env.SUPABASE_URL }}/rest/v1/appointments?clinic_id=eq.CLINIC-SMILECARE&appointment_id=eq.{{ $json.appointment_id }}",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/appointments?clinic_id=eq.CLINIC-SMILECARE&appointment_id=eq.{{ $json.appointment_id }}&phone_number=eq.{{ $('Execute Workflow Trigger').item.json.phone_number }}",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [

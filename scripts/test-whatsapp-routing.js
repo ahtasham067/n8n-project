@@ -125,6 +125,34 @@ for (const [name, id] of Object.entries(expectedTools)) {
   check(got === id, `tool ${name} -> ${id}`, `tool ${name} -> ${got}, expected ${id}`);
 }
 
+// The patient's phone comes from the WhatsApp sender, never from the model.
+// Otherwise a patient can ask the bot to read, book, cancel or reschedule
+// appointments that belong to another number.
+const TRUSTED_PHONE = "={{ $('Dental Clinic Config').item.json.phone_number }}";
+for (const name of ['BookAppointment', 'GetAppointment', 'CancelAppointment', 'RescheduleAppointment', 'CancelAllAppointments']) {
+  const value = node(agent, name).parameters.workflowInputs.value || {};
+  check(
+    value.phone_number === TRUSTED_PHONE,
+    `tool ${name} phone_number is the WhatsApp sender`,
+    `tool ${name} phone_number is ${value.phone_number}`,
+  );
+}
+check(
+  !JSON.stringify(agent).includes("$fromAI('phone_number'"),
+  'no tool lets the model choose phone_number',
+  "agent still has a $fromAI('phone_number') input",
+);
+for (const file of ['Tool - Cancel Appointment.json', 'Tool - Reschedule Appointment.json']) {
+  const wf = JSON.parse(fs.readFileSync(path.join(root, file), 'utf8'));
+  for (const n of wf.nodes.filter((x) => x.type === 'n8n-nodes-base.httpRequest' && /appointment_id=eq\./.test(x.parameters.url || ''))) {
+    check(
+      /&phone_number=eq\./.test(n.parameters.url),
+      `${file}: ${n.name} only matches the sender's own appointment`,
+      `${file}: ${n.name} looks up an appointment without a phone_number filter`,
+    );
+  }
+}
+
 if (failed) {
   console.error(`\n${failed} check(s) failed`);
   process.exit(1);

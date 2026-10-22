@@ -233,7 +233,7 @@
           ],
           "value": {
             "patient_name": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('patient_name', \"The patient's full name\") }}",
-            "phone_number": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('phone_number', \"The patient's WhatsApp phone number\") }}",
+            "phone_number": "={{ $('Dental Clinic Config').item.json.phone_number }}",
             "doctor_id": "={{ $('Dental Clinic Config').item.json.doctor_id }}",
             "appointment_date": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('appointment_date', 'Appointment date in YYYY-MM-DD format. Must match the date from CheckDoctorAvailability and use the current clinic year, never a past year.') }}",
             "appointment_time": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('appointment_time', 'Appointment time in HH:mm 24-hour format') }}"
@@ -271,10 +271,20 @@
               "display": true,
               "type": "string",
               "canBeUsedToMatch": true
+            },
+            {
+              "id": "phone_number",
+              "displayName": "phone_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
             }
           ],
           "value": {
-            "appointment_id": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('appointment_id', 'The appointment ID to cancel, e.g. APT-12345678') }}"
+            "appointment_id": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('appointment_id', 'The appointment ID to cancel, e.g. APT-12345678') }}",
+            "phone_number": "={{ $('Dental Clinic Config').item.json.phone_number }}"
           }
         }
       },
@@ -327,12 +337,22 @@
               "display": true,
               "type": "string",
               "canBeUsedToMatch": true
+            },
+            {
+              "id": "phone_number",
+              "displayName": "phone_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
             }
           ],
           "value": {
             "appointment_id": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('appointment_id', 'The appointment ID to reschedule, e.g. APT-12345678') }}",
             "new_date": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('new_date', 'The new appointment date in YYYY-MM-DD format. Must use the current clinic year, never a past year.') }}",
-            "new_time": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('new_time', 'The new appointment time in HH:mm 24-hour format') }}"
+            "new_time": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('new_time', 'The new appointment time in HH:mm 24-hour format') }}",
+            "phone_number": "={{ $('Dental Clinic Config').item.json.phone_number }}"
           }
         }
       },
@@ -370,7 +390,7 @@
             }
           ],
           "value": {
-            "phone_number": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('phone_number', \"The patient's WhatsApp phone number\") }}"
+            "phone_number": "={{ $('Dental Clinic Config').item.json.phone_number }}"
           }
         }
       },
