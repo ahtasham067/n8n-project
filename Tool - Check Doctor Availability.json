@@ -1,23 +1,27 @@
 {
   "name": "Tool - Check Doctor Availability",
+  "id": "K3aQylfpGB7OIUmy",
   "nodes": [
     {
       "parameters": {
         "workflowInputs": {
           "values": [
             {
+              "name": "clinic_id"
+            },
+            {
+              "name": "phone_number"
+            },
+            {
               "name": "doctor_id"
             },
             {
               "name": "preferred_date"
-            },
-            {
-              "name": "clinic_id"
             }
           ]
         }
       },
-      "id": "29085e7b-69aa-47a6-985e-b8bf336e31cc",
+      "id": "620e3976-f30e-5e90-89c4-2d2aa408a203",
       "name": "Execute Workflow Trigger",
       "type": "n8n-nodes-base.executeWorkflowTrigger",
       "typeVersion": 1.2,
@@ -29,7 +33,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "={{ $env.SUPABASE_URL }}/rest/v1/rpc/get_available_slots",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/rpc/bot_doctor_availability",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -49,7 +53,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ p_clinic_id: $('Execute Workflow Trigger').item.json.clinic_id, p_doctor_id: $json.doctor_id, p_date: $json.preferred_date }) }}",
+        "jsonBody": "={{ JSON.stringify({ p_clinic_id: $json.clinic_id, p_doctor_id: $json.doctor_id || null, p_date: $json.preferred_date, p_phone: $json.phone_number }) }}",
         "options": {
           "response": {
             "response": {
@@ -58,8 +62,8 @@
           }
         }
       },
-      "id": "rpc-get-available-slots",
-      "name": "RPC get_available_slots",
+      "id": "47734993-20f4-51d3-a5a3-b45292103038",
+      "name": "RPC bot_doctor_availability",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
@@ -71,30 +75,17 @@
     },
     {
       "parameters": {
-        "jsCode": "const trigger = $('Execute Workflow Trigger').first().json;\nconst rpc = $input.first().json;\n\nif (rpc.error || rpc.code) {\n  return [{ json: {\n    success: false,\n    error_type: 'database_failure',\n    message: 'Sorry, I am having trouble checking appointment availability right now. Please try again in a few minutes.'\n  } }];\n}\n\nreturn [{ json: {\n  success: rpc.success !== false,\n  doctor_id: trigger.doctor_id,\n  doctor_name: rpc.doctor_name,\n  date: trigger.preferred_date,\n  timezone: rpc.timezone,\n  available_slots: rpc.available_slots || [],\n  available_slots_display: rpc.available_slots_display || [],\n  booked_slots: rpc.booked_slots || [],\n  available_slots_windows: rpc.available_slots_windows || [],\n  message: rpc.message\n} }];"
-      },
-      "id": "a1557c55-08c9-4bc2-b503-ce02cdb00f52",
-      "name": "Format RPC Response",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        560,
-        0
-      ]
-    },
-    {
-      "parameters": {
-        "content": "## Tool: Check Doctor Availability\nCalls Postgres RPC get_available_slots (booked-slot exclusion in DB). Set CLINIC_ID env per deployment.",
+        "content": "## Check Doctor Availability\nOpen hour windows on a date, why there are none (leave, no hours, full), the next 3 dates with room and up to 2 same-specialty doctors free that day (bot_doctor_availability). A single-doctor clinic needs no doctor_id.",
         "height": 200,
-        "width": 320
+        "width": 420
       },
-      "id": "3af1c768-c753-423f-95e9-da40651bf4d4",
-      "name": "Sticky Note aff4940b",
+      "id": "715f089a-6534-5f9b-a9c7-7e97dc2558c8",
+      "name": "Sticky Note",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
-        0,
-        -260
+        -40,
+        -240
       ]
     }
   ],
@@ -103,18 +94,7 @@
       "main": [
         [
           {
-            "node": "RPC get_available_slots",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "RPC get_available_slots": {
-      "main": [
-        [
-          {
-            "node": "Format RPC Response",
+            "node": "RPC bot_doctor_availability",
             "type": "main",
             "index": 0
           }
@@ -124,9 +104,6 @@
   },
   "settings": {
     "executionOrder": "v1",
-    "binaryMode": "separate",
-    "availableInMCP": true,
-    "timeSavedMode": "fixed",
     "callerPolicy": "workflowsFromSameOwner"
   },
   "staticData": null,

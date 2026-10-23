@@ -219,7 +219,9 @@ const expectedTools = {
   CancelAppointment: 'YU0xJOfDAWTgu7ie',
   RescheduleAppointment: 'Z1FoatldEaEwpbS4',
   GetAppointment: 'L3GjYUaO84jum665',
-  SearchDoctors: 'uv2kXklXGCUD8xid',
+  FindDoctor: 'uv2kXklXGCUD8xid',
+  GetDoctorDetails: 'GtDocDetails0001',
+  FindEarliestSlots: 'FindEarliest0001',
   CancelAllAppointments: 'CaA1lAppt0000001',
   GetClinicInfo: 'hgi4PY0JBWmkpQBU',
 };
@@ -235,10 +237,54 @@ for (const name of Object.keys(expectedTools)) {
   const value = node(agent, name).parameters.workflowInputs.value || {};
   check(value.clinic_id === TRUSTED('clinic_id'), `tool ${name} clinic_id is the gateway's clinic`, `tool ${name} clinic_id is ${value.clinic_id}`);
 }
-for (const name of ['BookAppointment', 'GetAppointment', 'CancelAppointment', 'RescheduleAppointment', 'CancelAllAppointments']) {
+for (const name of ['BookAppointment', 'GetAppointment', 'CancelAppointment', 'RescheduleAppointment', 'CancelAllAppointments', 'FindDoctor', 'CheckDoctorAvailability']) {
   const value = node(agent, name).parameters.workflowInputs.value || {};
   check(value.phone_number === TRUSTED('phone_number'), `tool ${name} phone_number is the WhatsApp sender`, `tool ${name} phone_number is ${value.phone_number}`);
+}
+for (const name of ['GetAppointment', 'CancelAppointment', 'CancelAllAppointments']) {
+  const value = node(agent, name).parameters.workflowInputs.value || {};
   check(value.timezone === TRUSTED('clinic_timezone'), `tool ${name} timezone is the clinic's`, `tool ${name} timezone is ${value.timezone}`);
+}
+
+// --- Multi-doctor: thin tools over the dashboard's bot_* RPCs -----------------
+const RPC_TOOLS = {
+  'Tool - Find Doctor.json': 'bot_find_doctors',
+  'Tool - Get Doctor Details.json': 'bot_doctor_details',
+  'Tool - Check Doctor Availability.json': 'bot_doctor_availability',
+  'Tool - Find Earliest Slots.json': 'bot_earliest_slots',
+  'Tool - Book Appointment.json': 'bot_book_appointment',
+  'Tool - Reschedule Appointment.json': 'bot_reschedule',
+};
+for (const [file, rpc] of Object.entries(RPC_TOOLS)) {
+  const wf = read(file);
+  const http = wf.nodes.find((x) => x.type === 'n8n-nodes-base.httpRequest');
+  check(http && http.parameters.url.endsWith(`/rest/v1/rpc/${rpc}`) && http.parameters.jsonBody.includes('p_clinic_id: $json.clinic_id'),
+    `${file} calls ${rpc} for the calling clinic`, `${file} does not call ${rpc}`);
+  const expectedId = Object.entries(expectedTools).find(([, id]) => id === wf.id);
+  check(Boolean(expectedId), `${file} has the id the agent calls (${wf.id})`, `${file} id ${wf.id} isn't referenced by the agent`);
+}
+check(!fs.existsSync(path.join(root, 'Tool - Search Doctors.json')), 'old Search Doctors tool is gone', 'Tool - Search Doctors.json still exists');
+
+// The doctor blocks render for one doctor and for several.
+{
+  const sm = node(agent, 'Appointment Booking Agent').parameters.options.systemMessage;
+  const exprs = [...sm.matchAll(/\{\{([\s\S]*?)\}\}/g)].map((m) => m[1]).filter((e) => e.includes('doctor_count'));
+  check(exprs.length >= 3, 'the prompt switches on doctor_count', `the prompt has ${exprs.length} doctor_count blocks`);
+  const ctxFor = (count) => ({
+    doctor_count: String(count), doctors_roster: '1. Dr. A - Skin [doctor_id DOC-A]', clinic_name: 'C', clinic_specialty: 'Skin',
+    doctor_name: 'Dr. A', specialty: 'Skin', doctor_id: 'DOC-A', selection_text: count > 1 ? 'Dr. A (doctor_id DOC-A)' : '',
+  });
+  for (const count of [1, 3]) {
+    const ctx = ctxFor(count);
+    const $ = () => ({ item: { json: ctx } });
+    const rendered = exprs.map((e) => new Function('$', `return (${e});`)($)).join('\n');
+    if (count === 1) {
+      check(rendered.includes('single doctor only') && !rendered.includes('DOCTOR SELECTION'), 'one doctor renders the single-doctor rules', 'one doctor renders the wrong rules');
+    } else {
+      check(rendered.includes('DOCTOR SELECTION') && rendered.includes('Current selection: Dr. A') && rendered.includes('[doctor_id DOC-A]'),
+        'several doctors render the roster, selection and multi-doctor rules', 'several doctors render the wrong rules');
+    }
+  }
 }
 for (const field of ['phone_number', 'clinic_id', 'timezone']) {
   check(!agentText.includes(`$fromAI('${field}'`), `no tool lets the model choose ${field}`, `agent has a $fromAI('${field}') input`);

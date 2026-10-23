@@ -115,8 +115,17 @@ id** baked into its `toolWorkflow` nodes:
 | `CancelAppointment` | `YU0xJOfDAWTgu7ie` |
 | `RescheduleAppointment` | `Z1FoatldEaEwpbS4` |
 | `GetAppointment` | `L3GjYUaO84jum665` |
-| `SearchDoctors` | `uv2kXklXGCUD8xid` |
+| `FindDoctor` (was `SearchDoctors`, same id) | `uv2kXklXGCUD8xid` |
+| `GetDoctorDetails` | `GtDocDetails0001` |
+| `FindEarliestSlots` | `FindEarliest0001` |
 | `CancelAllAppointments` | `CaA1lAppt0000001` |
+
+`GetDoctorDetails` and `FindEarliestSlots` are new with multi-doctor booking. They don't
+exist on an n8n instance that predates it, so create each one **once** from its JSON
+(`Tool - Get Doctor Details.json`, `Tool - Find Earliest Slots.json`) and check that n8n
+kept the id in the file. If it gave a new id, put that id in the agent's matching
+`toolWorkflow` node before activating. `Tool - Search Doctors.json` was replaced by
+`Tool - Find Doctor.json`; edit that workflow in place (same id), don't add a second one.
 
 If a sub-workflow gets a **new** id, the agent silently keeps calling the old one. The
 repo's `Tool - *.json` files are exports without a reliable top-level `id`, so importing one
