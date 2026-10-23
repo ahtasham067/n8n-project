@@ -192,6 +192,25 @@ check(
   'chat memory is not keyed by clinic',
 );
 
+// --- LLM calls go through the dashboard's per-clinic proxy -------------------
+check(!/groqApi|api\.groq\.com/.test(agentText), 'agent holds no Groq key and never calls Groq directly', 'agent still uses a Groq credential or URL');
+for (const name of ['CliniDesk Chat Model', 'CliniDesk Fallback Chat Model']) {
+  const model = node(agent, name);
+  check(
+    model && model.type === '@n8n/n8n-nodes-langchain.lmChatOpenAi' &&
+      model.parameters.options.baseURL === "={{ $env.CLINIDESK_GATEWAY_URL }}/api/internal/llm/{{ $('Clinic Context').item.json.clinic_id }}/v1",
+    `${name} calls the LLM proxy for the calling clinic`,
+    `${name} is ${model && model.type} ${model && model.parameters.options && model.parameters.options.baseURL}`,
+  );
+}
+const transcribe = node(agent, 'Transcribe Voice Note');
+check(
+  transcribe.parameters.url.startsWith('={{ $env.CLINIDESK_GATEWAY_URL }}/api/internal/llm/') &&
+    (transcribe.parameters.headerParameters?.parameters || []).some((h) => h.name === 'Authorization' && h.value.includes('$env.CLINIDESK_GATEWAY_SECRET')),
+  'voice notes are transcribed through the LLM proxy',
+  `Transcribe Voice Note posts to ${transcribe.parameters.url}`,
+);
+
 // --- IDs that bind the agent to its tool sub-workflows must not change -------
 check(agent.id === 'nmXYYzPxvgMRZpm7', 'agent id unchanged', `agent id changed: ${agent.id}`);
 const expectedTools = {

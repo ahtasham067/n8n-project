@@ -119,16 +119,21 @@
     },
     {
       "parameters": {
-        "model": "openai/gpt-oss-120b",
+        "model": {
+          "__rl": true,
+          "value": "openai/gpt-oss-120b",
+          "mode": "id"
+        },
         "options": {
+          "baseURL": "={{ $env.CLINIDESK_GATEWAY_URL }}/api/internal/llm/{{ $('Clinic Context').item.json.clinic_id }}/v1",
           "temperature": 0.2,
-          "maxTokensToSample": 1024
+          "maxTokens": 1024
         }
       },
       "id": "6221c1df-d98b-4527-b5e3-a27043658c6c",
-      "name": "Groq Chat Model",
-      "type": "@n8n/n8n-nodes-langchain.lmChatGroq",
-      "typeVersion": 1,
+      "name": "CliniDesk Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
       "position": [
         1960,
         520
@@ -137,9 +142,9 @@
       "maxTries": 4,
       "waitBetweenTries": 15000,
       "credentials": {
-        "groqApi": {
-          "id": "8RikP3ta1Nm5ojcx",
-          "name": "Groq account"
+        "openAiApi": {
+          "id": "CliniDeskLlmProxy",
+          "name": "CliniDesk LLM proxy"
         }
       }
     },
@@ -836,9 +841,8 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "https://api.groq.com/openai/v1/audio/transcriptions",
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "groqApi",
+        "url": "={{ $env.CLINIDESK_GATEWAY_URL }}/api/internal/llm/{{ $('Normalize WhatsApp Message').item.json.clinic_id }}/v1/audio/transcriptions",
+        "authentication": "none",
         "sendBody": true,
         "contentType": "multipart-form-data",
         "bodyParameters": {
@@ -854,7 +858,16 @@
             }
           ]
         },
-        "options": {}
+        "options": {},
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.CLINIDESK_GATEWAY_SECRET }}"
+            }
+          ]
+        }
       },
       "id": "e5f6a7b8-c9d0-1234-ef01-345678901234",
       "name": "Transcribe Voice Note",
@@ -867,13 +880,7 @@
       "retryOnFail": true,
       "maxTries": 2,
       "waitBetweenTries": 1000,
-      "onError": "continueErrorOutput",
-      "credentials": {
-        "groqApi": {
-          "id": "8RikP3ta1Nm5ojcx",
-          "name": "Groq account"
-        }
-      }
+      "onError": "continueErrorOutput"
     },
     {
       "parameters": {
@@ -1070,24 +1077,29 @@
     },
     {
       "parameters": {
-        "model": "openai/gpt-oss-20b",
+        "model": {
+          "__rl": true,
+          "value": "openai/gpt-oss-20b",
+          "mode": "id"
+        },
         "options": {
-          "maxTokensToSample": 1024,
-          "temperature": 0.2
+          "baseURL": "={{ $env.CLINIDESK_GATEWAY_URL }}/api/internal/llm/{{ $('Clinic Context').item.json.clinic_id }}/v1",
+          "temperature": 0.2,
+          "maxTokens": 1024
         }
       },
-      "type": "@n8n/n8n-nodes-langchain.lmChatGroq",
-      "typeVersion": 1,
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
       "position": [
         1960,
         680
       ],
       "id": "40276e29-443c-4d49-a91c-fb69c02abcbd",
-      "name": "Groq Fallback Chat Model",
+      "name": "CliniDesk Fallback Chat Model",
       "credentials": {
-        "groqApi": {
-          "id": "8RikP3ta1Nm5ojcx",
-          "name": "Groq account"
+        "openAiApi": {
+          "id": "CliniDeskLlmProxy",
+          "name": "CliniDesk LLM proxy"
         }
       }
     },
@@ -1256,17 +1268,6 @@
         ]
       ]
     },
-    "Groq Chat Model": {
-      "ai_languageModel": [
-        [
-          {
-            "node": "Appointment Booking Agent",
-            "type": "ai_languageModel",
-            "index": 0
-          }
-        ]
-      ]
-    },
     "Clinic Context": {
       "main": [
         [
@@ -1387,17 +1388,6 @@
         ]
       ]
     },
-    "Groq Fallback Chat Model": {
-      "ai_languageModel": [
-        [
-          {
-            "node": "Appointment Booking Agent",
-            "type": "ai_languageModel",
-            "index": 1
-          }
-        ]
-      ]
-    },
     "Verify Gateway Secret": {
       "main": [
         [
@@ -1408,6 +1398,28 @@
           }
         ],
         []
+      ]
+    },
+    "CliniDesk Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Appointment Booking Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "CliniDesk Fallback Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Appointment Booking Agent",
+            "type": "ai_languageModel",
+            "index": 1
+          }
+        ]
       ]
     }
   },
