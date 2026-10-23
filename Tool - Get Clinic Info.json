@@ -4,7 +4,13 @@
   "nodes": [
     {
       "parameters": {
-        "inputSource": "passthrough"
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "clinic_id"
+            }
+          ]
+        }
       },
       "id": "fd3933c4-c775-4023-8bf2-c70ed89b844b",
       "name": "Execute Workflow Trigger",
@@ -38,7 +44,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ p_clinic_id: $env.CLINIC_ID || 'CLINIC-SMILECARE' }) }}",
+        "jsonBody": "={{ JSON.stringify({ p_clinic_id: $('Execute Workflow Trigger').item.json.clinic_id }) }}",
         "options": {
           "response": {
             "response": {

@@ -1,5 +1,5 @@
 // n8n Code node: Agent Error Fallback — salvage tool results; never fake confirmations.
-const config = $('Dental Clinic Config').first().json;
+const config = $('Clinic Context').first().json;
 const userMsg = String(config.message_text || '');
 const userLower = userMsg.toLowerCase();
 const err = String(

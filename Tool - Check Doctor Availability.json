@@ -10,6 +10,9 @@
             },
             {
               "name": "preferred_date"
+            },
+            {
+              "name": "clinic_id"
             }
           ]
         }
@@ -46,7 +49,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ p_clinic_id: $env.CLINIC_ID || 'CLINIC-SMILECARE', p_doctor_id: $json.doctor_id, p_date: $json.preferred_date }) }}",
+        "jsonBody": "={{ JSON.stringify({ p_clinic_id: $('Execute Workflow Trigger').item.json.clinic_id, p_doctor_id: $json.doctor_id, p_date: $json.preferred_date }) }}",
         "options": {
           "response": {
             "response": {
