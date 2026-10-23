@@ -112,6 +112,37 @@ for (const [field, source] of [
   );
 }
 
+// --- Human takeover (coexistence): staff context in, receive time out --------
+check(
+  String(assigned.inbound_received_at || '').includes('$json.body.received_at'),
+  'Normalize inbound_received_at comes from the gateway',
+  `Normalize inbound_received_at is ${assigned.inbound_received_at}`,
+);
+{
+  const expr = String(assigned.staff_context_text || '').replace(/^=\{\{\s*/, '').replace(/\s*\}\}$/, '');
+  let render = null;
+  try {
+    render = new Function('$json', `return (${expr});`);
+  } catch (err) {
+    check(false, '', `staff_context_text expression doesn't parse: ${err.message}`);
+  }
+  if (render) {
+    check(
+      render({ body: { staff_context: [{ text: 'Your report is ready' }, { text: 'Come at 5' }] } }) === '- Your report is ready\n- Come at 5',
+      'staff_context_text lists what staff said, one line each',
+      'staff_context_text renders wrongly',
+    );
+    check(render({ body: {} }) === '', 'no staff context renders as empty', 'empty staff context is not empty');
+  }
+}
+const systemMessage = node(agent, 'Appointment Booking Agent').parameters.options.systemMessage;
+check(
+  systemMessage.includes("$('Normalize WhatsApp Message').item.json.staff_context_text") &&
+    systemMessage.includes('do not repeat or contradict them'),
+  'the prompt tells the bot to continue from what staff said',
+  'the prompt does not use the staff context',
+);
+
 // --- Clinic context comes from the payload ----------------------------------
 const ctx = node(agent, CTX);
 check(!!ctx, `${CTX} node exists`, `${CTX} node missing`);
@@ -139,7 +170,7 @@ const secretHeader = (n) =>
     (h) => h.name === 'X-CliniDesk-Secret' && h.value === '={{ $env.CLINIDESK_GATEWAY_SECRET }}',
   );
 check(secretHeader(reply), 'Send WhatsApp Reply sends the gateway secret', 'Send WhatsApp Reply has no gateway secret');
-for (const field of ["clinic_id: $('Normalize WhatsApp Message').item.json.clinic_id", "phone_number_id: $('Normalize WhatsApp Message').item.json.phone_number_id", "to: $('Normalize WhatsApp Message').item.json.phone_number"]) {
+for (const field of ["inbound_received_at: $('Normalize WhatsApp Message').item.json.inbound_received_at", "clinic_id: $('Normalize WhatsApp Message').item.json.clinic_id", "phone_number_id: $('Normalize WhatsApp Message').item.json.phone_number_id", "to: $('Normalize WhatsApp Message').item.json.phone_number"]) {
   check(reply.parameters.jsonBody.includes(field), `reply body has ${field.split(':')[0]}`, `reply body is missing ${field}`);
 }
 
