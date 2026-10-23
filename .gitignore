@@ -11,6 +11,7 @@ deploy/.env
 # Local backups (volume tarballs, DB copies, exports — contain PII and
 # encrypted credentials)
 backups/
+deploy/queue/migration/
 
 # Generated n8n credential overwrite payload (contains secrets)
 config/credentials-overwrite.json

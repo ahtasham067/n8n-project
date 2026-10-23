@@ -119,28 +119,36 @@ check(
   `Normalize inbound_received_at is ${assigned.inbound_received_at}`,
 );
 {
-  const expr = String(assigned.staff_context_text || '').replace(/^=\{\{\s*/, '').replace(/\s*\}\}$/, '');
+  const expr = String(assigned.history_text || '').replace(/^=\{\{\s*/, '').replace(/\s*\}\}$/, '');
   let render = null;
   try {
     render = new Function('$json', `return (${expr});`);
   } catch (err) {
-    check(false, '', `staff_context_text expression doesn't parse: ${err.message}`);
+    check(false, '', `history_text expression doesn't parse: ${err.message}`);
   }
   if (render) {
+    const history = [
+      { role: 'patient', type: 'text', text: 'Kal appointment?' },
+      { role: 'assistant', type: 'text', text: 'Ji, 10 se 11 khali hai.' },
+      { role: 'staff', type: 'text', text: 'Fee 2000 hai' },
+      { role: 'patient', type: 'audio', text: null },
+    ];
     check(
-      render({ body: { staff_context: [{ text: 'Your report is ready' }, { text: 'Come at 5' }] } }) === '- Your report is ready\n- Come at 5',
-      'staff_context_text lists what staff said, one line each',
-      'staff_context_text renders wrongly',
+      render({ body: { history } }) ===
+        'Patient: Kal appointment?\nYou: Ji, 10 se 11 khali hai.\nClinic staff: Fee 2000 hai\nPatient: (voice note)',
+      'history_text labels patient, assistant and staff lines, oldest first',
+      `history_text renders wrongly: ${render({ body: { history } })}`,
     );
-    check(render({ body: {} }) === '', 'no staff context renders as empty', 'empty staff context is not empty');
+    check(render({ body: {} }) === '', 'no history renders as empty', 'empty history is not empty');
   }
 }
+check(!('staff_context_text' in assigned), 'staff messages come through the history, not a separate field', 'Normalize still sets staff_context_text');
 const systemMessage = node(agent, 'Appointment Booking Agent').parameters.options.systemMessage;
 check(
-  systemMessage.includes("$('Normalize WhatsApp Message').item.json.staff_context_text") &&
+  systemMessage.includes("$('Normalize WhatsApp Message').item.json.history_text") &&
     systemMessage.includes('do not repeat or contradict them'),
-  'the prompt tells the bot to continue from what staff said',
-  'the prompt does not use the staff context',
+  'the prompt gives the bot the chat so far and tells it to continue from staff',
+  'the prompt does not use the history',
 );
 
 // --- Clinic context comes from the payload ----------------------------------
@@ -186,10 +194,18 @@ check(
   `audio messages -> ${targets(agent, 'Detect Message Type', 0)}`,
 );
 
+// The gateway sends the chat so far; in-process memory would break across
+// queue-mode workers and keep replies that were never sent.
 check(
-  node(agent, 'Conversation Memory').parameters.sessionKey.includes("$('Normalize WhatsApp Message').item.json.clinic_id"),
-  'chat memory is keyed by clinic and patient',
-  'chat memory is not keyed by clinic',
+  !agent.nodes.some((n) => /memory/i.test(n.type)) && !Object.keys(agent.connections).some((k) => /memory/i.test(k)),
+  'the agent keeps no chat memory of its own',
+  'the agent still has a memory node',
+);
+check(
+  reply.parameters.jsonBody.includes("inbound_wamid: $('Normalize WhatsApp Message').item.json.wamid") &&
+    reply.parameters.jsonBody.includes("$('Prepare AI Input').isExecuted ? ($('Prepare AI Input').item.json.message_text"),
+  "the reply hands back the message id and a voice note's transcript",
+  'the reply does not hand back inbound_wamid / inbound_text',
 );
 
 // --- LLM calls go through the dashboard's per-clinic proxy -------------------
@@ -201,6 +217,13 @@ for (const name of ['CliniDesk Chat Model', 'CliniDesk Fallback Chat Model']) {
       model.parameters.options.baseURL === "={{ $env.CLINIDESK_GATEWAY_URL }}/api/internal/llm/{{ $('Clinic Context').item.json.clinic_id }}/v1",
     `${name} calls the LLM proxy for the calling clinic`,
     `${name} is ${model && model.type} ${model && model.parameters.options && model.parameters.options.baseURL}`,
+  );
+  // From version 1.1 the node hides the Base URL option and n8n drops it, so
+  // the call goes to api.openai.com with the gateway secret as the key.
+  check(
+    model && model.typeVersion === 1 && typeof model.parameters.model === 'string',
+    `${name} is version 1, which honours the Base URL option`,
+    `${name} is version ${model && model.typeVersion}; n8n ignores options.baseURL from 1.1`,
   );
 }
 const transcribe = node(agent, 'Transcribe Voice Note');

@@ -1,4 +1,5 @@
 {
+  "id": "2uyeIR2m38k0SSHB",
   "name": "WhatsApp Booking Error Handler",
   "nodes": [
     {
@@ -16,7 +17,7 @@
       "parameters": {
         "fromEmail": "ahtasham067@gmail.com",
         "toEmail": "ahtasham067@gmail.com",
-        "subject": "=\ud83d\udea8 [n8n] {{ $json.workflow.name }} failed at node: {{ $json.execution.lastNodeExecuted }}",
+        "subject": "=🚨 [n8n] {{ $json.workflow.name }} failed at node: {{ $json.execution.lastNodeExecuted }}",
         "emailFormat": "text",
         "text": "=A workflow execution failed and needs attention.\n\nWorkflow: {{ $json.workflow.name }} (ID: {{ $json.workflow.id }})\nFailed node: {{ $json.execution.lastNodeExecuted }}\nError message: {{ $json.execution.error.message }}\nExecution ID: {{ $json.execution.id }}\nExecution mode: {{ $json.execution.mode }}\nTimestamp: {{ $now.toISO() }}\n\nDebugging details (stack trace):\n{{ $json.execution.error.stack || 'No stack trace available' }}\n\nOpen this execution: {{ $json.execution.url }}",
         "options": {}
