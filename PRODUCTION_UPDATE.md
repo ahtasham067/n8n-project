@@ -59,6 +59,7 @@ agent + tool workflows (Oracle VM).
 | An n8n credential (WhatsApp token, Groq key, App Secret, SMTP) | §C-4. n8n UI on the VM, or `scripts/apply-whatsapp-auth.py` on the VM. Re-test with a **new** WhatsApp message. |
 | Meta phone number / WABA / app identity | Update the affected credential(s) (§C-4), set `WHATSAPP_PHONE_NUMBER_ID` + `WHATSAPP_ALLOWED_PHONE_NUMBER_IDS` in `~/smilecare-n8n/.env` (§C-3 — replies already follow the inbound number), re-activate the workflow, run `scripts/diagnose-whatsapp-webhook.py`. |
 | n8n version | §C-5. Discouraged — back up the volume, change the tag, `pull`, `up -d`, verify 9 workflows + credentials. |
+| Adding `CliniDesk Scheduler.json` (SaaS release, free tiers) | It is a **new** workflow, so this is the one case where importing is right: back up (§D), add `CLINIDESK_CRON_SECRET` to `~/smilecare-n8n/.env` (§C-3), then `n8n import:workflow --input=…` for this file only and `n8n publish:workflow --id=CliniDeskSched01`. Never re-import the other workflows. Check that an execution every 15 min gets `200` from `/api/cron/platform-alerts`. |
 | Supabase Auth URLs (new portal domain) | Supabase → Authentication → URL Configuration → update Site URL + Redirect URLs. No redeploy needed. |
 
 ---

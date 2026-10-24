@@ -345,6 +345,37 @@ check(
   'legacy Send Notification does not use WHATSAPP_PHONE_NUMBER_ID',
 );
 
+// --- Scheduler: the dashboard's frequent crons (Vercel Hobby runs them daily) ---
+const scheduler = read('CliniDesk Scheduler.json');
+const schedulerText = JSON.stringify(scheduler);
+const every = node(scheduler, 'Every 15 Minutes');
+check(
+  every?.type === 'n8n-nodes-base.scheduleTrigger' &&
+    every.parameters.rule.interval[0].field === 'minutes' &&
+    every.parameters.rule.interval[0].minutesInterval === 15,
+  'scheduler runs every 15 minutes',
+  'scheduler trigger is not every 15 minutes',
+);
+const alertsCall = node(scheduler, 'Run Platform Alerts');
+check(
+  targets(scheduler, 'Every 15 Minutes').includes('Run Platform Alerts') &&
+    alertsCall.parameters.url === '={{ $env.CLINIDESK_GATEWAY_URL }}/api/cron/platform-alerts',
+  'scheduler calls /api/cron/platform-alerts on the gateway URL',
+  `scheduler calls ${alertsCall?.parameters.url}`,
+);
+check(
+  (alertsCall.parameters.headerParameters?.parameters || []).some(
+    (h) => h.name === 'Authorization' && h.value === '=Bearer {{ $env.CLINIDESK_CRON_SECRET }}',
+  ),
+  'scheduler sends CLINIDESK_CRON_SECRET as a bearer token',
+  'scheduler has no cron secret header',
+);
+check(
+  !/https?:\/\//.test(schedulerText) && !/\d{10,}/.test(schedulerText),
+  'scheduler hardcodes no host and no number',
+  'scheduler contains a literal URL or a long number',
+);
+
 if (failed) {
   console.error(`\n${failed} check(s) failed`);
   process.exit(1);

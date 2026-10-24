@@ -1,0 +1,75 @@
+{
+  "name": "CliniDesk Scheduler",
+  "id": "CliniDeskSched01",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 15
+            }
+          ]
+        }
+      },
+      "id": "4e30e7b4-bb48-439b-9df1-8595b0cef3a4",
+      "name": "Every 15 Minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ],
+      "notes": "Vercel Hobby runs the dashboard's crons at most once a day, so the frequent ones run from here."
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.CLINIDESK_GATEWAY_URL }}/api/cron/platform-alerts",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.CLINIDESK_CRON_SECRET }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 300000
+        }
+      },
+      "id": "78dc31ea-f165-4a99-af1b-76abc4eee4cc",
+      "name": "Run Platform Alerts",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        240,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "notes": "GET /api/cron/platform-alerts on the dashboard with its CRON_SECRET. Each call also reaches Supabase, which keeps a Free project from pausing."
+    }
+  ],
+  "connections": {
+    "Every 15 Minutes": {
+      "main": [
+        [
+          {
+            "node": "Run Platform Alerts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "staticData": null,
+  "pinData": {}
+}
