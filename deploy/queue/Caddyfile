@@ -1,0 +1,13 @@
+# TLS in front of the queue-mode main process. Start with:
+#   docker compose -f docker-compose.queue.yml --profile tls up -d
+# CADDY_HOST comes from .env (DNS A record -> this VM, ports 80/443 open).
+
+{$CADDY_HOST} {
+	reverse_proxy n8n-main:5678
+
+	encode gzip
+
+	log {
+		output file /data/access.log
+	}
+}

@@ -59,6 +59,7 @@ agent + tool workflows (Oracle VM).
 | An n8n credential (WhatsApp token, Groq key, App Secret, SMTP) | §C-4. n8n UI on the VM, or `scripts/apply-whatsapp-auth.py` on the VM. Re-test with a **new** WhatsApp message. |
 | Meta phone number / WABA / app identity | Update the affected credential(s) (§C-4), set `WHATSAPP_PHONE_NUMBER_ID` + `WHATSAPP_ALLOWED_PHONE_NUMBER_IDS` in `~/smilecare-n8n/.env` (§C-3 — replies already follow the inbound number), re-activate the workflow, run `scripts/diagnose-whatsapp-webhook.py`. |
 | n8n version | §C-5. Discouraged — back up the volume, change the tag, `pull`, `up -d`, verify 9 workflows + credentials. |
+| Adding `CliniDesk Scheduler.json` (SaaS release, free tiers) | It is a **new** workflow, so this is the one case where importing is right: back up (§D), add `CLINIDESK_CRON_SECRET` to `~/smilecare-n8n/.env` (§C-3), then `n8n import:workflow --input=…` for this file only and `n8n publish:workflow --id=CliniDeskSched01`. Never re-import the other workflows. Check that an execution every 15 min gets `200` from `/api/cron/platform-alerts`. |
 | Supabase Auth URLs (new portal domain) | Supabase → Authentication → URL Configuration → update Site URL + Redirect URLs. No redeploy needed. |
 
 ---
@@ -115,8 +116,17 @@ id** baked into its `toolWorkflow` nodes:
 | `CancelAppointment` | `YU0xJOfDAWTgu7ie` |
 | `RescheduleAppointment` | `Z1FoatldEaEwpbS4` |
 | `GetAppointment` | `L3GjYUaO84jum665` |
-| `SearchDoctors` | `uv2kXklXGCUD8xid` |
+| `FindDoctor` (was `SearchDoctors`, same id) | `uv2kXklXGCUD8xid` |
+| `GetDoctorDetails` | `GtDocDetails0001` |
+| `FindEarliestSlots` | `FindEarliest0001` |
 | `CancelAllAppointments` | `CaA1lAppt0000001` |
+
+`GetDoctorDetails` and `FindEarliestSlots` are new with multi-doctor booking. They don't
+exist on an n8n instance that predates it, so create each one **once** from its JSON
+(`Tool - Get Doctor Details.json`, `Tool - Find Earliest Slots.json`) and check that n8n
+kept the id in the file. If it gave a new id, put that id in the agent's matching
+`toolWorkflow` node before activating. `Tool - Search Doctors.json` was replaced by
+`Tool - Find Doctor.json`; edit that workflow in place (same id), don't add a second one.
 
 If a sub-workflow gets a **new** id, the agent silently keeps calling the old one. The
 repo's `Tool - *.json` files are exports without a reliable top-level `id`, so importing one

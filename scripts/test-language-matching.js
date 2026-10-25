@@ -20,12 +20,25 @@ const requiredPhrases = [
   'Mixed Urdu and English',
   'Never mention language detection',
   'Tool result',
-  'HINDI IS COMPLETELY FORBIDDEN',
-  'NEVER generate Hindi',
+  // Hindi is refused in the current wording: any other language gets English.
+  'Reply ONLY in English or Urdu',
   'Devanagari',
-  'prefer Urdu',
-  'Asia/Karachi',
+  'do NOT reply in that language',
+  'Reply in English by default',
+  'prefers Urdu script',
+  // The clinic's own timezone, never a hardcoded one (the agent serves any clinic).
+  'Clinic timezone',
 ];
+
+const mustNotContain = ['Asia/Karachi', 'Pakistan Standard Time'];
+for (const phrase of mustNotContain) {
+  if (systemMessage.includes(phrase)) {
+    console.error(`FAIL  system prompt hardcodes: ${phrase}`);
+    process.exitCode = 1;
+  } else {
+    console.log(`PASS  prompt does not hardcode: ${phrase}`);
+  }
+}
 
 const forbiddenPhrases = [
   'respond in Hindi',
@@ -49,7 +62,7 @@ for (const phrase of forbiddenPhrases) {
   if (hits && !systemMessage.includes('NEVER generate Hindi') && !systemMessage.includes('do NOT respond in Hindi')) {
     // allow only in negation context
   }
-  const negated = systemMessage.includes('NEVER') && systemMessage.includes('Hindi');
+  const negated = systemMessage.includes('do NOT reply in that language') && systemMessage.includes('Hindi');
   if (!negated && hits) {
     failed += 1;
     console.error(`FAIL  prompt may allow Hindi: ${phrase}`);
@@ -117,7 +130,9 @@ if (hindiPolicy !== 'urdu-not-hindi') {
 }
 
 const fallbackNode = agent.nodes.find((n) => n.name === 'Agent Error Fallback');
-const fallbackExpr = fallbackNode.parameters.assignments.assignments.find((a) => a.name === 'output').value;
+// The fallback is a Code node now (it salvages tool results); older exports had a Set node.
+const fallbackExpr = fallbackNode.parameters.jsCode
+  ?? fallbackNode.parameters.assignments.assignments.find((a) => a.name === 'output').value;
 if (!fallbackExpr.includes('\\u0900-\\u097F')) {
   failed += 1;
   console.error('FAIL  Agent Error Fallback missing Devanagari detection');

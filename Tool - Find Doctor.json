@@ -1,0 +1,111 @@
+{
+  "name": "Tool - Find Doctor",
+  "id": "uv2kXklXGCUD8xid",
+  "nodes": [
+    {
+      "parameters": {
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "clinic_id"
+            },
+            {
+              "name": "phone_number"
+            },
+            {
+              "name": "query"
+            },
+            {
+              "name": "gender"
+            }
+          ]
+        }
+      },
+      "id": "8775943e-b5ba-5cdc-9880-0798b903b416",
+      "name": "Execute Workflow Trigger",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/rpc/bot_find_doctors",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ p_clinic_id: $json.clinic_id, p_query: $json.query || '', p_gender: $json.gender || null, p_phone: $json.phone_number }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "80163b4e-974a-5316-a098-d5424c0a595a",
+      "name": "RPC bot_find_doctors",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        280,
+        0
+      ],
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "content": "## Find Doctor\nMatches a doctor by name (any spelling, Roman Urdu or Urdu via aliases), specialty or service, for the calling clinic only (bot_find_doctors). One clear match becomes the patient's selection.",
+        "height": 200,
+        "width": 420
+      },
+      "id": "2b4661a0-4652-5945-a8c2-6321c76382a2",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -40,
+        -240
+      ]
+    }
+  ],
+  "connections": {
+    "Execute Workflow Trigger": {
+      "main": [
+        [
+          {
+            "node": "RPC bot_find_doctors",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "staticData": null,
+  "pinData": {}
+}

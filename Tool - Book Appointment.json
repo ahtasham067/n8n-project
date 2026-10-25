@@ -1,18 +1,22 @@
 {
   "name": "Tool - Book Appointment",
+  "id": "vlxq9W4WX10a6sOt",
   "nodes": [
     {
       "parameters": {
         "workflowInputs": {
           "values": [
             {
-              "name": "patient_name"
+              "name": "clinic_id"
             },
             {
               "name": "phone_number"
             },
             {
               "name": "doctor_id"
+            },
+            {
+              "name": "patient_name"
             },
             {
               "name": "appointment_date"
@@ -23,7 +27,7 @@
           ]
         }
       },
-      "id": "98f22750-bb65-4b14-ac7e-968386ec880c",
+      "id": "64060b98-c2c4-5a4c-94a9-de1ab02398c5",
       "name": "Execute Workflow Trigger",
       "type": "n8n-nodes-base.executeWorkflowTrigger",
       "typeVersion": 1.2,
@@ -34,8 +38,8 @@
     },
     {
       "parameters": {
-        "method": "GET",
-        "url": "={{ $env.SUPABASE_URL }}/rest/v1/doctors?clinic_id=eq.CLINIC-SMILECARE&doctor_id=eq.{{ $json.doctor_id }}&select=*",
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/rpc/bot_book_appointment",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -53,6 +57,9 @@
             }
           ]
         },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ p_clinic_id: $json.clinic_id, p_doctor_id: $json.doctor_id || null, p_date: $json.appointment_date, p_patient_name: $json.patient_name, p_phone: $json.phone_number, p_time: $json.appointment_time || null }) }}",
         "options": {
           "response": {
             "response": {
@@ -61,8 +68,8 @@
           }
         }
       },
-      "id": "b12ef1bb-0730-4148-829f-9cb74425ac3d",
-      "name": "Get Doctor",
+      "id": "5fc3e566-f4da-5fed-a98a-23d683e48170",
+      "name": "RPC bot_book_appointment",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
@@ -74,331 +81,17 @@
     },
     {
       "parameters": {
-        "method": "GET",
-        "url": "={{ $env.SUPABASE_URL }}/rest/v1/appointments?clinic_id=eq.CLINIC-SMILECARE&doctor_id=eq.{{ $('Execute Workflow Trigger').item.json.doctor_id }}&appointment_date=eq.{{ $('Execute Workflow Trigger').item.json.appointment_date }}&status=neq.cancelled&select=*",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "apikey",
-              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
-            },
-            {
-              "name": "Authorization",
-              "value": "={{ 'Bearer ' + $env.SUPABASE_SERVICE_ROLE_KEY }}"
-            },
-            {
-              "name": "Content-Type",
-              "value": "application/json"
-            }
-          ]
-        },
-        "options": {
-          "response": {
-            "response": {
-              "neverError": true
-            }
-          }
-        }
+        "content": "## Book Appointment\nBooks the WhatsApp sender with a doctor on an hour window (the one asked for, or the earliest), refusing inactive or hidden doctors and asking first about a same-day, same-doctor, same-name duplicate (bot_book_appointment).",
+        "height": 200,
+        "width": 420
       },
-      "id": "4dfd881a-de95-4fd5-8546-0a9b5d85cf7a",
-      "name": "Get Conflicting Appointment",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        560,
-        0
-      ],
-      "onError": "continueRegularOutput",
-      "alwaysOutputData": true
-    },
-    {
-      "parameters": {
-        "jsCode": "// --- Clinic time formatting (presentation layer only; DB stores HH:mm) ---\nconst CLINIC_TIMEZONE = 'Asia/Karachi';\n\nfunction parseClinicTime(raw) {\n  if (raw == null || raw === '') return null;\n  const s = String(raw).trim().replace(/\\s+/g, ' ');\n  const zone = CLINIC_TIMEZONE;\n  const formats = ['HH:mm', 'H:mm', 'HH:mm:ss', 'H:mm:ss', 'h:mm a', 'h:mma', 'hh:mm a', 'hh:mma', 'h a', 'ha', 'h:mm:ss a'];\n  for (const fmt of formats) {\n    const dt = DateTime.fromFormat(s, fmt, { zone, locale: 'en' });\n    if (dt.isValid) return dt;\n  }\n  const iso = DateTime.fromISO(s, { zone });\n  if (iso.isValid && /T|\\d:\\d/.test(s)) return iso;\n  return null;\n}\n\nfunction toStoredTime(raw) {\n  const dt = parseClinicTime(raw);\n  return dt ? dt.toFormat('HH:mm') : null;\n}\n\nfunction formatTime12h(raw) {\n  const dt = parseClinicTime(raw);\n  if (!dt) return raw;\n  return dt.setLocale('en-US').toFormat('h:mm a').replace(/\\b(am|pm)\\b/gi, (m) => m.toUpperCase());\n}\n\nfunction clinicNow() {\n  return DateTime.now().setZone(CLINIC_TIMEZONE);\n}\n\nfunction formatDateDisplay(isoOrDate) {\n  const raw = String(isoOrDate || '').trim();\n  const datePart = raw.includes('T') ? raw.split('T')[0] : raw.slice(0, 10);\n  const dt = DateTime.fromISO(datePart, { zone: CLINIC_TIMEZONE });\n  return dt.isValid ? dt.toFormat('MMMM d, yyyy') : raw;\n}\n// --- end clinic time formatting ---\n\n\nfunction rowsFrom(nodeName) {\n  const items = $(nodeName).all();\n  const out = [];\n  for (const item of items) {\n    const j = item.json;\n    if (Array.isArray(j)) {\n      for (const row of j) out.push(row);\n    } else if (j && typeof j === 'object') {\n      if (j.doctor_id || j.appointment_id || j.clinic_id) out.push(j);\n      else if (Array.isArray(j.body)) {\n        for (const row of j.body) out.push(row);\n      }\n    }\n  }\n  return out;\n}\n\nconst doctorRows = rowsFrom('Get Doctor');\nconst doctor = doctorRows[0] || null;\nconst trigger = $('Execute Workflow Trigger').first().json;\n\nif (!doctor || !doctor.doctor_id) {\n  return [{ json: { canBook: false, message: 'No doctor found with ID ' + trigger.doctor_id + '. Please check the doctor ID and try again.' } }];\n}\n\nconst doctorLabel = doctor.doctor_name;\nconst dt = DateTime.fromISO(trigger.appointment_date, { zone: CLINIC_TIMEZONE });\nif (!dt.isValid) {\n  return [{ json: { canBook: false, message: 'The date ' + trigger.appointment_date + ' is not valid. Please use YYYY-MM-DD format.' } }];\n}\nconst today = clinicNow().startOf('day');\nif (dt.startOf('day') < today) {\n  const todayDisplay = formatDateDisplay(today.toISODate());\n  return [{ json: { canBook: false, message: 'Appointments cannot be booked for past dates. Today is ' + todayDisplay + '. Please choose today or a future date.' } }];\n}\nconst weekdayMap = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];\nconst weekdayName = weekdayMap[dt.weekday - 1];\n\n// --- Same-day duplicate check: same phone + same patient name + same day ---\nconst base = $env.SUPABASE_URL;\nconst key = $env.SUPABASE_SERVICE_ROLE_KEY;\nconst rpcHeaders = { apikey: key, Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' };\n\nconst dupCheck = await this.helpers.httpRequest({\n  method: 'POST',\n  url: `${base}/rest/v1/rpc/check_same_day_phone_booking`,\n  headers: rpcHeaders,\n  body: {\n    p_clinic_id: 'CLINIC-SMILECARE',\n    p_phone_number: trigger.phone_number,\n    p_date: trigger.appointment_date,\n    p_patient_name: trigger.patient_name,\n  },\n  json: true,\n});\n\nif (dupCheck && dupCheck.conflict && !dupCheck.has_time_passed) {\n  return [{ json: {\n    canBook: false,\n    needsDisambiguation: true,\n    existingAppointmentId: dupCheck.appointment_id,\n    existingTime: dupCheck.appointment_time_display,\n    existingDoctor: dupCheck.doctor_name,\n    message: 'You already have an appointment today at ' + dupCheck.appointment_time_display + ' with ' + dupCheck.doctor_name + '. Would you like to reschedule that appointment instead, or is this a booking for a different patient?',\n  } }];\n}\n\n// --- Hourly-capacity doctors (data-driven: only a doctor with a matching\n//     doctor_hourly_availability row for this weekday uses this branch) ---\nconst hourlyRows = await this.helpers.httpRequest({\n  method: 'GET',\n  url: `${base}/rest/v1/doctor_hourly_availability?clinic_id=eq.CLINIC-SMILECARE&doctor_id=eq.${encodeURIComponent(trigger.doctor_id)}&day_of_week=eq.${weekdayName}&select=*`,\n  headers: rpcHeaders,\n  json: true,\n});\nconst hourlyConfig = Array.isArray(hourlyRows) ? hourlyRows[0] : null;\n\nif (hourlyConfig) {\n  const existingForDay = rowsFrom('Get Conflicting Appointment');\n  const hourlyBooked = existingForDay.filter(i => i.uses_hourly_bucket === true);\n\n  let cursor = DateTime.fromFormat(String(hourlyConfig.start_time).trim(), 'HH:mm', { zone: CLINIC_TIMEZONE });\n  const hourlyEnd = DateTime.fromFormat(String(hourlyConfig.end_time).trim(), 'HH:mm', { zone: CLINIC_TIMEZONE });\n  let assignedTime = null;\n  while (cursor.isValid && hourlyEnd.isValid && cursor < hourlyEnd) {\n    const bucketStart = cursor.toFormat('HH:mm');\n    const count = hourlyBooked.filter(i => toStoredTime(i.appointment_time) === bucketStart).length;\n    if (count < hourlyConfig.patients_per_hour) {\n      assignedTime = bucketStart;\n      break;\n    }\n    cursor = cursor.plus({ hours: 1 });\n  }\n\n  if (!assignedTime) {\n    return [{ json: { canBook: false, message: 'Sorry, there are no available hourly slots left for ' + doctorLabel + ' on ' + formatDateDisplay(trigger.appointment_date) + '. Please try another date.' } }];\n  }\n\n  const windowEndTime = DateTime.fromFormat(assignedTime, 'HH:mm', { zone: CLINIC_TIMEZONE }).plus({ hours: 1 }).toFormat('HH:mm');\n  const appointmentId = 'APT-' + Date.now().toString().slice(-8);\n  return [{ json: {\n    canBook: true,\n    isHourlyBucket: true,\n    appointment_id: appointmentId,\n    doctor_id: trigger.doctor_id,\n    doctor_name: doctorLabel,\n    patient_name: trigger.patient_name,\n    phone_number: trigger.phone_number,\n    appointment_date: trigger.appointment_date,\n    appointment_time: assignedTime,\n    appointment_date_display: formatDateDisplay(trigger.appointment_date),\n    appointment_time_display: formatTime12h(assignedTime),\n    window_start_display: formatTime12h(assignedTime),\n    window_end_display: formatTime12h(windowEndTime),\n    timezone: CLINIC_TIMEZONE,\n    clinic_id: 'CLINIC-SMILECARE',\n  } }];\n}\n\n// --- Legacy exact-time doctors (unchanged behavior) ---\nconst workingDays = (doctor.working_days || '').split(',').map(d => d.trim()).filter(Boolean);\nif (!workingDays.includes(weekdayName)) {\n  return [{ json: { canBook: false, message: doctorLabel + ' does not work on ' + weekdayName + '. Working days are: ' + workingDays.join(', ') + '.' } }];\n}\n\nconst appointmentTime = toStoredTime(trigger.appointment_time);\nif (!appointmentTime) {\n  return [{ json: { canBook: false, message: 'The time ' + trigger.appointment_time + ' is not valid. Please choose a slot from the available list.' } }];\n}\n\nconst [startStr, endStr] = (doctor.working_hours || '09:00-17:00').split('-');\nconst duration = doctor.slot_duration_minutes || 30;\nlet slotCursor = DateTime.fromFormat(startStr.trim(), 'HH:mm', { zone: CLINIC_TIMEZONE });\nconst legacyEnd = DateTime.fromFormat(endStr.trim(), 'HH:mm', { zone: CLINIC_TIMEZONE });\nconst allSlots = [];\nwhile (slotCursor.isValid && legacyEnd.isValid && slotCursor < legacyEnd) {\n  allSlots.push(slotCursor.toFormat('HH:mm'));\n  slotCursor = slotCursor.plus({ minutes: duration });\n}\nif (!allSlots.includes(appointmentTime)) {\n  return [{ json: { canBook: false, message: formatTime12h(appointmentTime) + ' is not a valid slot for ' + doctorLabel + '. Please choose an available time from CheckDoctorAvailability.' } }];\n}\n\nconst conflictItems = rowsFrom('Get Conflicting Appointment').filter(i => i.appointment_id && toStoredTime(i.appointment_time) === appointmentTime).map(i => ({ json: i }));\nif (conflictItems.length > 0) {\n  const dateDisplay = formatDateDisplay(trigger.appointment_date);\n  return [{ json: { canBook: false, message: 'Sorry, ' + doctorLabel + ' is already booked at ' + formatTime12h(appointmentTime) + ' on ' + dateDisplay + '. Please choose another slot.' } }];\n}\n\nconst appointmentId = 'APT-' + Date.now().toString().slice(-8);\nreturn [{ json: {\n  canBook: true,\n  isHourlyBucket: false,\n  appointment_id: appointmentId,\n  doctor_id: trigger.doctor_id,\n  doctor_name: doctorLabel,\n  patient_name: trigger.patient_name,\n  phone_number: trigger.phone_number,\n  appointment_date: trigger.appointment_date,\n  appointment_time: appointmentTime,\n  appointment_date_display: formatDateDisplay(trigger.appointment_date),\n  appointment_time_display: formatTime12h(appointmentTime),\n  timezone: CLINIC_TIMEZONE,\n  clinic_id: 'CLINIC-SMILECARE'\n} }];\n"
-      },
-      "id": "eb8ab796-ffdc-49a0-9e20-04bec5636f0f",
-      "name": "Validate Booking",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        840,
-        0
-      ]
-    },
-    {
-      "parameters": {
-        "conditions": {
-          "options": {
-            "caseSensitive": true,
-            "leftValue": "",
-            "typeValidation": "loose",
-            "version": 2
-          },
-          "conditions": [
-            {
-              "leftValue": "={{ $json.canBook }}",
-              "operator": {
-                "type": "boolean",
-                "operation": "true",
-                "singleValue": true
-              },
-              "rightValue": ""
-            }
-          ],
-          "combinator": "and"
-        },
-        "options": {}
-      },
-      "id": "db98c03e-4021-4a54-9c94-556db0ff041c",
-      "name": "Can Book?",
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2.2,
-      "position": [
-        1120,
-        0
-      ]
-    },
-    {
-      "parameters": {
-        "method": "POST",
-        "url": "={{ $env.SUPABASE_URL }}/rest/v1/appointments",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "apikey",
-              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
-            },
-            {
-              "name": "Authorization",
-              "value": "={{ 'Bearer ' + $env.SUPABASE_SERVICE_ROLE_KEY }}"
-            },
-            {
-              "name": "Content-Type",
-              "value": "application/json"
-            },
-            {
-              "name": "Prefer",
-              "value": "return=representation"
-            }
-          ]
-        },
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ appointment_id: $json.appointment_id, clinic_id: 'CLINIC-SMILECARE', patient_name: $json.patient_name, phone_number: $json.phone_number, doctor_id: $json.doctor_id, doctor_name: $json.doctor_name, appointment_date: $json.appointment_date, appointment_time: $json.appointment_time, status: 'booked', source: 'whatsapp', uses_hourly_bucket: Boolean($json.isHourlyBucket) }) }}",
-        "options": {
-          "response": {
-            "response": {
-              "neverError": true
-            }
-          }
-        }
-      },
-      "id": "7a9b5fda-363f-46e0-85d2-ec4a94a1d1fc",
-      "name": "Insert Appointment",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        1400,
-        0
-      ],
-      "onError": "continueRegularOutput"
-    },
-    {
-      "parameters": {
-        "jsCode": "const v = $('Validate Booking').first().json;\nconst raw = $input.first().json;\n\nfunction slotTakenMessage() {\n  return (\n    'Sorry, ' +\n    v.doctor_name +\n    ' is already booked at ' +\n    v.appointment_time_display +\n    ' on ' +\n    v.appointment_date_display +\n    '. Please choose another slot.'\n  );\n}\n\nfunction genericFail() {\n  return 'Could not save the appointment. Please try again in a moment.';\n}\n\nfunction looksLikePostgrestError(j) {\n  if (!j || typeof j !== 'object' || Array.isArray(j)) return false;\n  return Boolean(j.code || j.hint !== undefined || j.details !== undefined || (j.message && !j.appointment_id));\n}\n\nlet body = raw;\nif (raw && typeof raw === 'object' && raw.error && typeof raw.error === 'object') {\n  body = raw.error;\n}\n\nif (Array.isArray(body)) {\n  const row = body[0];\n  if (row && row.appointment_id) {\n    return [{ json: { insertOk: true } }];\n  }\n  return [{ json: { insertOk: false, message: genericFail() } }];\n}\n\nif (body && body.appointment_id && !looksLikePostgrestError(body)) {\n  return [{ json: { insertOk: true } }];\n}\n\nif (looksLikePostgrestError(body)) {\n  const code = String(body.code || '');\n  const msg = String(body.message || '');\n  if (code === '23505' || /duplicate|unique|conflict/i.test(msg)) {\n    return [{ json: { insertOk: false, message: slotTakenMessage() } }];\n  }\n  return [{ json: { insertOk: false, message: genericFail() } }];\n}\n\nreturn [{ json: { insertOk: false, message: genericFail() } }];\n"
-      },
-      "id": "a1b2c3d4-e5f6-7788-9900-aabbccddeeff",
-      "name": "Check Insert Result",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        1680,
-        0
-      ]
-    },
-    {
-      "parameters": {
-        "conditions": {
-          "options": {
-            "caseSensitive": true,
-            "leftValue": "",
-            "typeValidation": "loose",
-            "version": 2
-          },
-          "conditions": [
-            {
-              "leftValue": "={{ $json.insertOk }}",
-              "operator": {
-                "type": "boolean",
-                "operation": "true",
-                "singleValue": true
-              },
-              "rightValue": ""
-            }
-          ],
-          "combinator": "and"
-        },
-        "options": {}
-      },
-      "id": "b2c3d4e5-f6a7-8899-0011-bbccddeeff00",
-      "name": "Insert OK?",
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2.2,
-      "position": [
-        1960,
-        0
-      ]
-    },
-    {
-      "parameters": {
-        "assignments": {
-          "assignments": [
-            {
-              "id": "s1",
-              "name": "success",
-              "value": true,
-              "type": "boolean"
-            },
-            {
-              "id": "s2",
-              "name": "appointment_id",
-              "value": "={{ $('Validate Booking').item.json.appointment_id }}",
-              "type": "string"
-            },
-            {
-              "id": "s3",
-              "name": "doctor_name",
-              "value": "={{ $('Validate Booking').item.json.doctor_name }}",
-              "type": "string"
-            },
-            {
-              "id": "s4",
-              "name": "appointment_date",
-              "value": "={{ $('Validate Booking').item.json.appointment_date }}",
-              "type": "string"
-            },
-            {
-              "id": "s5",
-              "name": "appointment_time",
-              "value": "={{ $('Validate Booking').item.json.appointment_time }}",
-              "type": "string"
-            },
-            {
-              "id": "s6",
-              "name": "message",
-              "value": "=Your appointment has been confirmed.\n\nDate: {{ $('Validate Booking').item.json.appointment_date_display }}\n{{ $('Validate Booking').item.json.isHourlyBucket ? ('Time window: ' + $('Validate Booking').item.json.window_start_display + ' - ' + $('Validate Booking').item.json.window_end_display) : ('Time: ' + $('Validate Booking').item.json.appointment_time_display) }}\nDoctor: {{ $('Validate Booking').item.json.doctor_name }}\nService: Gastroenterology & Hepatology Consultation\nAppointment ID: {{ $('Validate Booking').item.json.appointment_id }}{{ $('Validate Booking').item.json.isHourlyBucket ? ('\\n\\nPlease note: your appointment time may shift slightly due to emergencies, delays, or schedule changes on the day — our staff will do their best to see you within your assigned hour window.') : '' }}",
-              "type": "string"
-            },
-            {
-              "id": "s7",
-              "name": "appointment_date_display",
-              "value": "={{ $('Validate Booking').item.json.appointment_date_display }}",
-              "type": "string"
-            },
-            {
-              "id": "s8",
-              "name": "appointment_time_display",
-              "value": "={{ $('Validate Booking').item.json.appointment_time_display }}",
-              "type": "string"
-            },
-            {
-              "id": "s9",
-              "name": "isHourlyBucket",
-              "value": "={{ $('Validate Booking').item.json.isHourlyBucket || false }}",
-              "type": "boolean"
-            },
-            {
-              "id": "s10",
-              "name": "window_start_display",
-              "value": "={{ $('Validate Booking').item.json.window_start_display || '' }}",
-              "type": "string"
-            },
-            {
-              "id": "s11",
-              "name": "window_end_display",
-              "value": "={{ $('Validate Booking').item.json.window_end_display || '' }}",
-              "type": "string"
-            }
-          ]
-        },
-        "options": {}
-      },
-      "id": "786b8309-d3b8-4bbc-8f15-f24512b04e81",
-      "name": "Success Response",
-      "type": "n8n-nodes-base.set",
-      "typeVersion": 3.5,
-      "position": [
-        2240,
-        0
-      ]
-    },
-    {
-      "parameters": {
-        "assignments": {
-          "assignments": [
-            {
-              "id": "f1",
-              "name": "success",
-              "value": false,
-              "type": "boolean"
-            },
-            {
-              "id": "f2",
-              "name": "message",
-              "value": "={{ $json.message }}",
-              "type": "string"
-            },
-            {
-              "id": "f3",
-              "name": "needsDisambiguation",
-              "value": "={{ $json.needsDisambiguation || false }}",
-              "type": "boolean"
-            },
-            {
-              "id": "f4",
-              "name": "existingAppointmentId",
-              "value": "={{ $json.existingAppointmentId || '' }}",
-              "type": "string"
-            },
-            {
-              "id": "f5",
-              "name": "existingTime",
-              "value": "={{ $json.existingTime || '' }}",
-              "type": "string"
-            },
-            {
-              "id": "f6",
-              "name": "existingDoctor",
-              "value": "={{ $json.existingDoctor || '' }}",
-              "type": "string"
-            }
-          ]
-        },
-        "options": {}
-      },
-      "id": "bd7262eb-b1b0-46a3-b322-3698d45f69b3",
-      "name": "Failure Response",
-      "type": "n8n-nodes-base.set",
-      "typeVersion": 3.5,
-      "position": [
-        1960,
-        260
-      ]
-    },
-    {
-      "parameters": {
-        "content": "## Tool: Book Appointment\nValidates the doctor and slot, then inserts into Supabase `appointments` (service role). Maps unique-slot conflicts (23505) to a friendly slot-taken message. Requires env SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY.",
-        "height": 220,
-        "width": 320
-      },
-      "id": "1a513f7f-a9a2-4af6-bcf0-be67812b4b5e",
-      "name": "Sticky Note 546c3ec8",
+      "id": "2bfd21c1-5fe2-50b2-89c4-d345d2c53969",
+      "name": "Sticky Note",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
-        0,
-        -260
+        -40,
+        -240
       ]
     }
   ],
@@ -407,98 +100,7 @@
       "main": [
         [
           {
-            "node": "Get Doctor",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Get Doctor": {
-      "main": [
-        [
-          {
-            "node": "Get Conflicting Appointment",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Get Conflicting Appointment": {
-      "main": [
-        [
-          {
-            "node": "Validate Booking",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Validate Booking": {
-      "main": [
-        [
-          {
-            "node": "Can Book?",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Can Book?": {
-      "main": [
-        [
-          {
-            "node": "Insert Appointment",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Failure Response",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Insert Appointment": {
-      "main": [
-        [
-          {
-            "node": "Check Insert Result",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Check Insert Result": {
-      "main": [
-        [
-          {
-            "node": "Insert OK?",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Insert OK?": {
-      "main": [
-        [
-          {
-            "node": "Success Response",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Failure Response",
+            "node": "RPC bot_book_appointment",
             "type": "main",
             "index": 0
           }
@@ -508,9 +110,6 @@
   },
   "settings": {
     "executionOrder": "v1",
-    "binaryMode": "separate",
-    "availableInMCP": true,
-    "timeSavedMode": "fixed",
     "callerPolicy": "workflowsFromSameOwner"
   },
   "staticData": null,

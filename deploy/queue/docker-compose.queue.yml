@@ -1,0 +1,130 @@
+# n8n in queue mode for CliniDesk: one main process (editor + webhooks), N
+# workers that run the executions, Redis for the queue and Postgres for n8n's
+# own data (not the app database). Use this once one n8n process is no longer
+# enough; until then ../docker-compose.prod.yml stays the deployment.
+#
+# Why it works with several workers: the agent keeps no chat memory of its own.
+# The dashboard gateway sends the last day of the chat with every message
+# (`history`), so any worker can answer any patient.
+#
+# Usage (see README.md in this folder for the move from SQLite):
+#   cp .env.queue.example .env && chmod 600 .env    # fill values
+#   docker compose -f docker-compose.queue.yml up -d
+#   docker compose -f docker-compose.queue.yml up -d --scale n8n-worker=3
+#
+# Never point this at the volume of a running SQLite instance, and never run
+# ../../start-n8n-whatsapp.sh on the host.
+
+name: clinidesk-n8n-queue
+
+x-n8n-env: &n8n-env
+  # Postgres and Redis come from this file; everything else from .env.
+  DB_TYPE: postgresdb
+  DB_POSTGRESDB_HOST: postgres
+  DB_POSTGRESDB_PORT: "5432"
+  DB_POSTGRESDB_DATABASE: ${N8N_DB_NAME:-n8n}
+  DB_POSTGRESDB_USER: ${N8N_DB_USER:-n8n}
+  DB_POSTGRESDB_PASSWORD: ${N8N_DB_PASSWORD:?set N8N_DB_PASSWORD in .env}
+  EXECUTIONS_MODE: queue
+  QUEUE_BULL_REDIS_HOST: redis
+  QUEUE_BULL_REDIS_PORT: "6379"
+  QUEUE_BULL_REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}
+  QUEUE_HEALTH_CHECK_ACTIVE: "true"
+  OFFLOAD_MANUAL_EXECUTIONS_TO_WORKERS: "true"
+  # Every process must decrypt the same credentials.
+  N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY:?set N8N_ENCRYPTION_KEY in .env}
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${N8N_DB_NAME:-n8n}
+      POSTGRES_USER: ${N8N_DB_USER:-n8n}
+      POSTGRES_PASSWORD: ${N8N_DB_PASSWORD:?set N8N_DB_PASSWORD in .env}
+    volumes:
+      - n8n_postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks: [n8n]
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}"]
+    volumes:
+      - n8n_redis:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$${REDIS_PASSWORD}\" ping | grep PONG"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    networks: [n8n]
+
+  n8n-main:
+    # Same pin as the SQLite deployment; upgrade both together.
+    image: docker.n8n.io/n8nio/n8n:2.34.6
+    restart: unless-stopped
+    env_file: [.env]
+    environment: *n8n-env
+    ports:
+      # Loopback only: Caddy terminates TLS. Never publish 5678 publicly.
+      - "127.0.0.1:${N8N_MAIN_PORT:-5678}:5678"
+    volumes:
+      - n8n_main:/home/node/.n8n
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:5678/healthz >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+    networks: [n8n]
+    extra_hosts: ["host.docker.internal:host-gateway"]
+
+  n8n-worker:
+    image: docker.n8n.io/n8nio/n8n:2.34.6
+    restart: unless-stopped
+    command: ["worker", "--concurrency=${N8N_WORKER_CONCURRENCY:-8}"]
+    env_file: [.env]
+    environment: *n8n-env
+    depends_on:
+      n8n-main: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:5678/healthz >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+    networks: [n8n]
+    extra_hosts: ["host.docker.internal:host-gateway"]
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    profiles: [tls]
+    environment:
+      CADDY_HOST: ${CADDY_HOST:?set CADDY_HOST in .env}
+    ports: ["80:80", "443:443"]
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on: [n8n-main]
+    networks: [n8n]
+
+volumes:
+  n8n_postgres:
+  n8n_redis:
+  n8n_main:
+  caddy_data:
+  caddy_config:
+
+networks:
+  n8n:
+    driver: bridge
