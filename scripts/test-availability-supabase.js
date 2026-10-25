@@ -196,43 +196,59 @@ async function checkRpcAvailability(preferredDate) {
 async function regressionBookedSlotExclusion() {
   const testDate = '2099-03-16'; // Monday
   const testTime = '10:00';
-  const aptId = `APT-TEST${Date.now().toString().slice(-6)}`;
+  const run = Date.now().toString().slice(-6);
 
-  console.log('\n=== Regression: book → exclude → cancel → restore ===');
+  console.log('\n=== Regression: fill hour → exclude → cancel → restore ===');
 
   let before = await checkRpcAvailability(testDate);
   const beforeSlots = before.available_slots || [];
   if (!beforeSlots.includes('09:00')) {
     throw new Error('Expected 09:00 available before booking');
   }
+  // An hour window takes patients_per_hour bookings (hourly capacity), so fill
+  // what is left of it; one booking alone doesn't close the window.
+  const window = (before.available_slots_windows || []).find((w) => w.start === testTime);
+  if (!window) throw new Error(`Expected a ${testTime} window before booking`);
 
-  await supabasePost('appointments', {
-    appointment_id: aptId,
-    clinic_id: CLINIC_ID,
-    patient_name: 'Slot Test Patient',
-    phone_number: '+923000001111',
-    doctor_id: DOCTOR_ID,
-    doctor_name: 'Dr. Bilal Hussain',
-    appointment_date: testDate,
-    appointment_time: testTime,
-    status: 'booked',
-  });
+  // One active booking per exact time (appointments_active_slot_uidx), so
+  // spread them over the hour.
+  const step = Math.floor(60 / window.capacity);
+  const times = Array.from(
+    { length: window.capacity },
+    (_, i) => `${testTime.slice(0, 2)}:${String(i * step).padStart(2, '0')}`,
+  )
+    .filter((t) => !(before.booked_slots || []).includes(t))
+    .slice(0, window.remaining);
+  const aptIds = times.map((_, i) => `APT-TEST${run}${i}`);
+  try {
+    for (const [i, aptId] of aptIds.entries()) {
+      await supabasePost('appointments', {
+        appointment_id: aptId,
+        clinic_id: CLINIC_ID,
+        patient_name: 'Slot Test Patient',
+        phone_number: `+92300000111${i}`,
+        doctor_id: DOCTOR_ID,
+        doctor_name: before.doctor_name,
+        appointment_date: testDate,
+        appointment_time: times[i],
+        status: 'booked',
+      });
+    }
 
-  let during = await checkRpcAvailability(testDate);
-  const duringSlots = during.available_slots || [];
-  if (duringSlots.includes(testTime)) {
-    throw new Error(`${testTime} must NOT appear after booking`);
+    let during = await checkRpcAvailability(testDate);
+    const duringSlots = during.available_slots || [];
+    if (duringSlots.includes(testTime)) {
+      throw new Error(`${testTime} must NOT appear once its hour is full`);
+    }
+    if (!duringSlots.includes('09:00')) {
+      throw new Error('09:00 should still be available when 10:00 is full');
+    }
+    console.log('PASS: full hour excluded from availability');
+  } finally {
+    for (const aptId of aptIds) {
+      await supabasePatch('appointments', `appointment_id=eq.${aptId}`, { status: 'cancelled' });
+    }
   }
-  if (!duringSlots.includes('09:00')) {
-    throw new Error('09:00 should still be available when 10:00 is booked');
-  }
-  console.log('PASS: booked slot excluded from availability');
-
-  await supabasePatch(
-    'appointments',
-    `appointment_id=eq.${aptId}`,
-    { status: 'cancelled' },
-  );
 
   let after = await checkRpcAvailability(testDate);
   const afterSlots = after.available_slots || [];
