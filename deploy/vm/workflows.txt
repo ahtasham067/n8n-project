@@ -1,0 +1,17 @@
+# Workflows that deploy.yml imports into production n8n, by fixed id, then
+# publishes. One per line: <id> <file>. Files not listed are never imported
+# (Send Notification.json has no fixed id: importing it would add a copy each
+# time). scripts/validate-workflows.js checks this list against the files.
+nmXYYzPxvgMRZpm7 WhatsApp AI Appointment Booking Agent.json
+2uyeIR2m38k0SSHB WhatsApp Booking Error Handler.json
+CliniDeskSched01 CliniDesk Scheduler.json
+vlxq9W4WX10a6sOt Tool - Book Appointment.json
+CaA1lAppt0000001 Tool - Cancel All Appointments.json
+YU0xJOfDAWTgu7ie Tool - Cancel Appointment.json
+K3aQylfpGB7OIUmy Tool - Check Doctor Availability.json
+uv2kXklXGCUD8xid Tool - Find Doctor.json
+FindEarliest0001 Tool - Find Earliest Slots.json
+L3GjYUaO84jum665 Tool - Get Appointment.json
+hgi4PY0JBWmkpQBU Tool - Get Clinic Info.json
+GtDocDetails0001 Tool - Get Doctor Details.json
+Z1FoatldEaEwpbS4 Tool - Reschedule Appointment.json
