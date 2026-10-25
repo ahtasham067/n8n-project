@@ -1,0 +1,76 @@
+# Production pipeline for the Oracle VM: a push to main → every check in ci.yml
+# on the merged commit → approval (environment production-vm) → over SSH,
+# deploy/vm/deploy.sh: back up, import the workflows by fixed id, publish, start,
+# health check, and restore the backup automatically if anything fails.
+#
+# - A push deploys only when the repo variable AUTO_DEPLOY_PRODUCTION is "true".
+#   Keep it unset until the SaaS cutover: main's workflows need the SaaS
+#   dashboard. Run workflow (workflow_dispatch) deploys main's head.
+# - The SSH key can only run deploy/vm/ssh-gate.sh, which deploys commits on
+#   main only.
+# - This repo is public, so its Actions logs are too. The VM scripts print
+#   counts and ids only.
+# See deploy/vm/README.md.
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: production-vm
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  checks:
+    name: Checks
+    uses: ./.github/workflows/ci.yml
+
+  deploy:
+    name: Deploy to the Oracle VM
+    needs: checks
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' || vars.AUTO_DEPLOY_PRODUCTION == 'true')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production-vm
+    steps:
+      - name: SSH key and pinned host key
+        env:
+          SSH_KEY: ${{ secrets.N8N_VM_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.N8N_VM_KNOWN_HOSTS }}
+          VM_HOST: ${{ secrets.N8N_VM_HOST }}
+          VM_USER: ${{ secrets.N8N_VM_USER }}
+        run: |
+          for name in SSH_KEY KNOWN_HOSTS VM_HOST VM_USER; do
+            if [ -z "${!name}" ]; then
+              echo "::error::An N8N_VM_* secret is missing in the production-vm environment (deploy/vm/README.md)."
+              exit 1
+            fi
+          done
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/deploy_key ~/.ssh/known_hosts
+
+      - name: Deploy ${{ github.sha }}
+        env:
+          VM_HOST: ${{ secrets.N8N_VM_HOST }}
+          VM_USER: ${{ secrets.N8N_VM_USER }}
+          VM_PORT: ${{ secrets.N8N_VM_PORT }}
+        run: |
+          ssh -i ~/.ssh/deploy_key -p "${VM_PORT:-22}" \
+            -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts \
+            -o ServerAliveInterval=30 -o ConnectTimeout=20 \
+            "$VM_USER@$VM_HOST" "deploy $GITHUB_SHA"
+
+      - name: Remove the key
+        if: always()
+        run: rm -f ~/.ssh/deploy_key

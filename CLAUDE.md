@@ -17,6 +17,7 @@ npm test              # runs test:time + test:language + test:whatsapp
 npm run test:time      # node scripts/test-time-format.js (lib/clinic-time.js unit tests)
 npm run test:language  # node scripts/test-language-matching.js (validates agent systemMessage rules)
 npm run test:whatsapp  # node scripts/test-whatsapp-routing.js (sender routing, number guard, workflow/tool ids)
+node scripts/validate-workflows.js  # CI: JSON, fixed ids vs deploy/vm/workflows.txt, references, no clinic ids/tokens/phones/emails
 
 python3 scripts/verify-shared-supabase-e2e.py   # full E2E lifecycle test against Supabase (book/cancel/reschedule/notifications)
 node scripts/test-availability-supabase.js       # availability probe + booked-slot regression test
@@ -61,7 +62,7 @@ The `Tool - *.json` files are sub-workflows invoked via `toolWorkflow` nodes fro
 
 `Send Notification.json` is legacy: it still sends from `$env.WHATSAPP_PHONE_NUMBER_ID` for the one clinic named by the dashboard's `LEGACY_WHATSAPP_CLINIC_ID`, until that clinic connects its number through the dashboard. Retire it after that cutover.
 
-Every workflow file has a fixed top-level `id` matching what the agent's `toolWorkflow` nodes and `errorWorkflow` setting reference, so a **fresh** instance (queue mode, standalone install) can import them with `n8n import:workflow --separate`. n8n 2.x only runs a sub-workflow that is **published**, so publish every `Tool - *` workflow and the error handler too (`n8n publish:workflow --id=…`, then restart). An existing instance is still updated in place, never by re-import (`PRODUCTION_UPDATE.md`).
+Every workflow file has a fixed top-level `id` matching what the agent's `toolWorkflow` nodes and `errorWorkflow` setting reference, so a **fresh** instance (queue mode, standalone install) can import them with `n8n import:workflow --separate`. n8n 2.x only runs a sub-workflow that is **published**, so publish every `Tool - *` workflow and the error handler too (`n8n publish:workflow --id=…`, then restart). Production is updated by GitHub Actions (`.github/workflows/deploy.yml`, `deploy/vm/README.md`): after the CI checks and your approval, `deploy/vm/deploy.sh` backs up the `n8n_data` volume, imports the files listed in `deploy/vm/workflows.txt` over the existing workflows by id, publishes them, health-checks, and restores the backup on any failure. A new workflow file with a fixed id must be added to `workflows.txt`. Never import these files by hand as **new** workflows (`PRODUCTION_UPDATE.md`).
 
 Editing workflow JSON directly: these files are n8n's export format. After editing, re-import them into n8n (UI import or via the MCP n8n tools if available) rather than hand-crafting node wiring blind — the JSON encodes node positions, connections by name, and expression bindings that are easy to break silently.
 

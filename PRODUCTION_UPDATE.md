@@ -53,13 +53,13 @@ agent + tool workflows (Oracle VM).
 | A portal environment variable | Vercel → Settings → Environment Variables → edit → **Redeploy** (Deployments → ⋯ → Redeploy). Mandatory for any `NEXT_PUBLIC_*`. |
 | DB schema, RLS policy, function, or RPC | New **additive** migration file → back up (§D) → `npx supabase db push` to the linked prod ref → verify (§F). Redeploy the portal only if it depends on the new shape. See §C-1. |
 | Doctor / clinic reference data (hours, `clinic_settings`, a new doctor) | Edit through the portal's admin UI, **or** run a hand-written idempotent `insert … on conflict do update` in the SQL Editor. **Not** the seed script. |
-| n8n workflow logic — the agent or any tool sub-workflow | §C-2. Edit the workflow **in place** in the prod n8n UI (id in the URL must not change), Save, re-activate, then Download the JSON back to the repo. Never import as a new workflow; never delete + recreate. |
+| n8n workflow logic — the agent or any tool sub-workflow | Change the JSON in a PR, merge, then Actions → **Deploy** (`deploy/vm/README.md`): CI checks, your approval, volume backup, import by fixed id, publish, health check, automatic restore on failure. Manual fallback: §C-2, edit **in place** in the prod n8n UI and Download the JSON back to the repo. Never import as a new workflow; never delete + recreate. |
 | An n8n Code-node script (`agent-error-fallback.js`, `clinic-time-snippet.js`) | Open the workflow on prod, edit the Code node's contents on the canvas, Save (§C-2). Keep `scripts/agent-error-fallback.js` / `scripts/clinic-time-snippet.js` and the repo JSON in sync. Remember rule A-9. |
 | An n8n environment variable (`SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, URL vars, `TZ`, `CLINIC_TIMEZONE`) | Edit `~/smilecare-n8n/.env` on the VM → `docker compose -f docker-compose.prod.yml up -d` (recreates the container; workflows stay Active, credentials still decrypt). §C-3. |
 | An n8n credential (WhatsApp token, Groq key, App Secret, SMTP) | §C-4. n8n UI on the VM, or `scripts/apply-whatsapp-auth.py` on the VM. Re-test with a **new** WhatsApp message. |
 | Meta phone number / WABA / app identity | Update the affected credential(s) (§C-4), set `WHATSAPP_PHONE_NUMBER_ID` + `WHATSAPP_ALLOWED_PHONE_NUMBER_IDS` in `~/smilecare-n8n/.env` (§C-3 — replies already follow the inbound number), re-activate the workflow, run `scripts/diagnose-whatsapp-webhook.py`. |
 | n8n version | §C-5. Discouraged — back up the volume, change the tag, `pull`, `up -d`, verify 9 workflows + credentials. |
-| Adding `CliniDesk Scheduler.json` (SaaS release, free tiers) | It is a **new** workflow, so this is the one case where importing is right: back up (§D), add `CLINIDESK_CRON_SECRET` to `~/smilecare-n8n/.env` (§C-3), then `n8n import:workflow --input=…` for this file only and `n8n publish:workflow --id=CliniDeskSched01`. Never re-import the other workflows. Check that an execution every 15 min gets `200` from `/api/cron/platform-alerts`. |
+| Adding `CliniDesk Scheduler.json` (SaaS release, free tiers) | It is in `deploy/vm/workflows.txt`, so **Deploy** imports and publishes it with the rest. Add `CLINIDESK_CRON_SECRET` to `~/smilecare-n8n/.env` (§C-3) first. Check that an execution every 15 min gets `200` from `/api/cron/platform-alerts`. |
 | Supabase Auth URLs (new portal domain) | Supabase → Authentication → URL Configuration → update Site URL + Redirect URLs. No redeploy needed. |
 
 ---
@@ -105,6 +105,8 @@ agent + tool workflows (Oracle VM).
 and confirm that user can still do exactly what they should and nothing more.
 
 ### C-2. n8n workflow change (safe, ID-preserving)
+
+The normal path is the **Deploy** workflow (`deploy/vm/README.md`). Every file in `deploy/vm/workflows.txt` has the fixed id below, so its import updates the existing workflow instead of adding one, and it restores the volume backup if anything fails. The rules in this section are for changes made by hand.
 
 **Why this needs care:** the agent calls each tool sub-workflow by a **hard-coded workflow
 id** baked into its `toolWorkflow` nodes:
