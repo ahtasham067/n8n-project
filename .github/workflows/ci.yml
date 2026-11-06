@@ -1,0 +1,146 @@
+# Checks for every pull request to main. deploy.yml calls this file too
+# (workflow_call), so a deploy re-runs them on the merged commit first. main is
+# protected by a ruleset that requires the first four jobs. See deploy/vm/README.md.
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_call:
+
+# One run per PR: a new push cancels the outdated run. Never cancel when called
+# from a deploy.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  GITLEAKS_VERSION: 8.24.2
+  GITLEAKS_SHA256: fa0500f6b7e41d28791ebc680f5dd9899cd42b58629218a5f041efa899151a8e
+
+jobs:
+  validate:
+    name: Workflow validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Workflow JSON, ids, references, no clinic ids or secrets
+        run: node scripts/validate-workflows.js
+
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # Time formatting, the agent's language rules, and gateway routing
+      # (test-whatsapp-routing.js).
+      - run: npm test
+
+  compose:
+    name: Compose config
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # Placeholders for the queue stack's required variables; never real values.
+    env:
+      N8N_DB_PASSWORD: ci-placeholder
+      REDIS_PASSWORD: ci-placeholder
+      N8N_ENCRYPTION_KEY: ci-placeholder
+      CADDY_HOST: ci.example.invalid
+    steps:
+      - uses: actions/checkout@v7
+      - name: Env files from the examples
+        run: |
+          cp .env.example .env.docker
+          cp deploy/.env.production.example deploy/.env
+          cp deploy/queue/.env.queue.example deploy/queue/.env
+      - name: Local
+        run: docker compose -f docker-compose.yml config -q
+      - name: Production (Oracle VM)
+        run: docker compose -f deploy/docker-compose.prod.yml config -q
+      - name: Queue mode
+        run: docker compose -f deploy/queue/docker-compose.queue.yml --profile tls config -q
+
+  security:
+    name: Secrets and commit messages
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      # Only this change's own commits: main's older history is not re-checked
+      # on every PR.
+      - name: Commits to check
+        id: range
+        env:
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+        run: |
+          range=""
+          if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
+            range="$PR_BASE..$PR_HEAD"
+          elif [ "$GITHUB_EVENT_NAME" = push ] && git cat-file -e "${PUSH_BEFORE}^{commit}" 2>/dev/null; then
+            range="$PUSH_BEFORE..$GITHUB_SHA"
+          fi
+          echo "range=$range" >> "$GITHUB_OUTPUT"
+          echo "Checking ${range:-the files at $GITHUB_SHA}"
+
+      - name: Install gitleaks
+        run: |
+          cd "$RUNNER_TEMP"
+          curl -sSfL -o gitleaks.tgz "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          echo "${GITLEAKS_SHA256}  gitleaks.tgz" | sha256sum -c -
+          tar -xzf gitleaks.tgz gitleaks
+          sudo install gitleaks /usr/local/bin/gitleaks
+
+      - name: Secret scan (gitleaks)
+        env:
+          RANGE: ${{ steps.range.outputs.range }}
+        run: |
+          if [ -n "$RANGE" ]; then
+            gitleaks git . --config .gitleaks.toml --log-opts="$RANGE" --redact --no-banner --verbose
+          else
+            gitleaks dir . --config .gitleaks.toml --redact --no-banner --verbose
+          fi
+
+      - name: No AI co-author or attribution lines
+        env:
+          RANGE: ${{ steps.range.outputs.range }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          pattern='co-authored-by:.*(claude|anthropic)|generated with \[?claude|noreply@anthropic\.com'
+          if [ -n "$RANGE" ]; then
+            messages="$(git log --format='--- %h%n%B' "$RANGE")"
+          else
+            messages="$(git log -1 --format='--- %h%n%B')"
+          fi
+          fail=0
+          if grep -inE "$pattern" <<<"$messages"; then
+            echo "::error::A commit message has an AI co-author or attribution line. Reword the commit and force-push the branch."
+            fail=1
+          fi
+          if grep -inE "$pattern" <<<"$PR_TITLE"$'\n'"$PR_BODY"; then
+            echo "::error::The PR title or description has an AI attribution line."
+            fail=1
+          fi
+          exit "$fail"

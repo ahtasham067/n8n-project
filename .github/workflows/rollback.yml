@@ -1,0 +1,73 @@
+# Put production n8n back to a backup that a deploy took just before it changed
+# anything (deploy/vm/rollback.sh). The whole n8n_data volume goes back to that
+# moment, including executions and credentials edited since. Needs approval
+# (environment production-vm). See deploy/vm/README.md.
+name: Rollback
+
+on:
+  workflow_dispatch:
+    inputs:
+      backup:
+        description: Backup id (e.g. 20261025T101500Z-abc1234), "latest" (undoes the last deploy), or "status" to list backups
+        type: string
+        default: latest
+        required: true
+      confirm:
+        description: Type "rollback" to confirm (not needed for status)
+        type: string
+        required: false
+
+concurrency:
+  group: production-vm
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  rollback:
+    name: Roll back the Oracle VM
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production-vm
+    steps:
+      - name: Confirmed?
+        env:
+          BACKUP: ${{ inputs.backup }}
+          CONFIRM: ${{ inputs.confirm }}
+        run: |
+          if [ "$BACKUP" != status ] && [ "$CONFIRM" != rollback ]; then
+            echo "::error::Type \"rollback\" in the confirm box to roll back."
+            exit 1
+          fi
+
+      - name: SSH key and pinned host key
+        env:
+          SSH_KEY: ${{ secrets.N8N_VM_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.N8N_VM_KNOWN_HOSTS }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/deploy_key ~/.ssh/known_hosts
+
+      - name: Roll back
+        env:
+          VM_HOST: ${{ secrets.N8N_VM_HOST }}
+          VM_USER: ${{ secrets.N8N_VM_USER }}
+          VM_PORT: ${{ secrets.N8N_VM_PORT }}
+          BACKUP: ${{ inputs.backup }}
+        run: |
+          if [ "$BACKUP" = status ]; then command=status; else command="rollback $BACKUP"; fi
+          ssh -i ~/.ssh/deploy_key -p "${VM_PORT:-22}" \
+            -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts \
+            -o ServerAliveInterval=30 -o ConnectTimeout=20 \
+            "$VM_USER@$VM_HOST" "$command"
+
+      - name: Remove the key
+        if: always()
+        run: rm -f ~/.ssh/deploy_key

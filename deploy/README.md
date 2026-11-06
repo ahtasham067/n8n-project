@@ -10,6 +10,7 @@ Configs for the zero-cost Oracle + DuckDNS + Caddy setup described in the siblin
 | `Caddyfile` | Auto TLS reverse proxy (edit hostname) |
 | `.env.production.example` | Copy to `.env` on the VM — **never set `N8N_ENCRYPTION_KEY`** |
 | `migrate-n8n-volume.sh` | Export / upload / restore `n8n_data` volume |
+| `vm/` | GitHub Actions deploys of the workflows to this VM: backup, import by fixed id, publish, health check, automatic restore. See `vm/README.md` |
 
 **Local development** still uses `../docker-compose.yml` and `../start-n8n-whatsapp.sh`. Do **not** run the tunnel script on the cloud VM.
 

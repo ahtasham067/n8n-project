@@ -1,0 +1,13 @@
+# Secret scan settings for CI (ci.yml → "Secrets and commit messages").
+# The default rules apply. The allowlist covers the Supabase CLI's public
+# local demo keys (iss supabase-demo), used as local test fallbacks.
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Test-only values"
+regexTarget = "line"
+regexes = [
+  '''eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9\.eyJpc3MiOiJzdXBhYmFzZS1kZW1vI[A-Za-z0-9_-]*\.[A-Za-z0-9_-]+''',
+]
