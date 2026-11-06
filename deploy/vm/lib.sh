@@ -23,6 +23,23 @@ die() { log "ERROR: $*" >&2; exit 1; }
 
 compose() { docker compose -f "$COMPOSE_FILE" "$@"; }
 
+# Keep going if the SSH connection drops. Otherwise the first write after a drop
+# kills the script with SIGPIPE, and n8n stays stopped with nothing restored.
+# The real run gets its own session and writes to last-run.log; this process only
+# follows that file and passes on the exit code. Call it with the script's "$@".
+detach_from_ssh() {
+  [ -z "${N8N_DETACHED:-}" ] || return 0
+  mkdir -p "$BACKUP_ROOT"
+  chmod 700 "$BACKUP_ROOT"
+  local out="$BACKUP_ROOT/last-run.log" pid
+  : >"$out"
+  N8N_DETACHED=1 setsid --wait bash "${BASH_SOURCE[1]}" "$@" >"$out" 2>&1 </dev/null &
+  pid=$!
+  tail -n +1 --pid="$pid" -f "$out" || true
+  wait "$pid"
+  exit $?
+}
+
 # One deploy or rollback at a time.
 take_lock() {
   mkdir -p "$BACKUP_ROOT"

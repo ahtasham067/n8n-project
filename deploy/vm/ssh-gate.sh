@@ -19,6 +19,15 @@ die() { echo "gate: $*" >&2; exit 2; }
 read -r action arg extra <<<"${SSH_ORIGINAL_COMMAND:-}" || true
 [ -z "${extra:-}" ] || die "unexpected arguments"
 
+# A deploy that lost its SSH connection keeps running (lib.sh). Don't move the
+# checkout underneath it.
+refuse_if_busy() {
+  # shellcheck source=/dev/null
+  [ ! -f "$HOME/.config/clinidesk-n8n-deploy.env" ] || . "$HOME/.config/clinidesk-n8n-deploy.env"
+  local lock="${N8N_BACKUP_DIR:-$HOME/backups/n8n-deploy}/.lock"
+  [ ! -e "$lock" ] || flock -n "$lock" true || die "another deploy or rollback is running"
+}
+
 sync_main() {
   [ -d "$REPO_DIR/.git" ] || git clone --quiet "$REPO_URL" "$REPO_DIR"
   git -C "$REPO_DIR" fetch --quiet --prune origin main
@@ -27,6 +36,7 @@ sync_main() {
 case "${action:-}" in
   deploy)
     [[ "${arg:-}" =~ ^[0-9a-f]{40}$ ]] || die "deploy needs a full commit sha"
+    refuse_if_busy
     sync_main
     git -C "$REPO_DIR" merge-base --is-ancestor "$arg" origin/main 2>/dev/null || die "${arg:0:7} is not on main"
     git -C "$REPO_DIR" checkout --quiet --force --detach "$arg"
@@ -34,12 +44,14 @@ case "${action:-}" in
     ;;
   rollback)
     [[ "${arg:-}" =~ ^(latest|[0-9]{8}T[0-9]{6}Z-[0-9a-f]{7})$ ]] || die "rollback needs a backup id or latest"
+    refuse_if_busy
     sync_main
     git -C "$REPO_DIR" checkout --quiet --force --detach origin/main
     exec bash "$REPO_DIR/deploy/vm/rollback.sh" "$arg"
     ;;
   status)
     [ -z "${arg:-}" ] || die "status takes no arguments"
+    refuse_if_busy
     sync_main
     git -C "$REPO_DIR" checkout --quiet --force --detach origin/main
     exec bash "$REPO_DIR/deploy/vm/rollback.sh" list
