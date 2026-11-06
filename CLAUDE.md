@@ -19,7 +19,7 @@ npm run test:language  # node scripts/test-language-matching.js (validates agent
 npm run test:whatsapp  # node scripts/test-whatsapp-routing.js (sender routing, number guard, workflow/tool ids)
 node scripts/validate-workflows.js  # CI: JSON, fixed ids vs deploy/vm/workflows.txt, references, no clinic ids/tokens/phones/emails
 
-python3 scripts/verify-shared-supabase-e2e.py   # full E2E lifecycle test against Supabase (book/cancel/reschedule/notifications)
+E2E_TEST_PHONE=<digits> python3 scripts/verify-shared-supabase-e2e.py   # full E2E lifecycle test against Supabase (book/cancel/reschedule/notifications)
 node scripts/test-availability-supabase.js       # availability probe + booked-slot regression test
 python3 scripts/verify-whatsapp-token.py --no-send  # read-only: token, sender number status, WABA health (drop --no-send to send a real test message)
 ```
@@ -69,6 +69,10 @@ Editing workflow JSON directly: these files are n8n's export format. After editi
 ### Time handling
 
 The DB stores appointment times as `HH:mm` 24-hour strings. `lib/clinic-time.js` (and its inline copy baked into the agent workflow's Code node, `scripts/clinic-time-snippet.js`) is the presentation-layer conversion boundary — it parses flexible input formats (`9:00 AM`, `21:00`, `9:00pm`, etc.) and formats for display in the clinic timezone (`Asia/Karachi`, from `CLINIC_TIMEZONE`). If you touch time parsing/formatting logic, update **both** `lib/clinic-time.js` and the snippet embedded in the workflow JSON — they must stay in sync since the workflow's Code node can't `require()` the lib file.
+
+### One number per environment
+
+Local uses only Meta's test number (`WHATSAPP_NUMBER_PROFILE=test`) and production only the real number (`real`). See `README.md` for where each value lives and which guard enforces it. No phone number, Phone Number ID or WABA ID goes in a tracked file; gitleaks has a rule for them.
 
 ### Credentials and secrets
 

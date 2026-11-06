@@ -30,7 +30,7 @@ agent + tool workflows (Oracle VM).
 7. **Meta allows one webhook callback per app.** While local and production share an app,
    activating a local or tunnel n8n instance steals the production subscription — keep local
    workflows **inactive** while prod is live. After the switch to separate apps (production
-   `1755561068820381`, local `1452204086838529`), the callbacks no longer collide, but a
+   `<PROD_APP_ID>`, local `<LOCAL_APP_ID>`), the callbacks no longer collide, but a
    number's messages reach **every app subscribed to its WABA**: keep the real number's WABA
    subscribed to the production app only, and keep the real number out of local
    `WHATSAPP_ALLOWED_PHONE_NUMBER_IDS`. See `WHATSAPP_REAL_NUMBER_SETUP.md`.

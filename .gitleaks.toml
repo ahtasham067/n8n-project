@@ -5,6 +5,12 @@
 [extend]
 useDefault = true
 
+[[rules]]
+id = "whatsapp-literal-id"
+description = "A Meta phone_number_id or WABA ID written as a literal. Use an env var or a placeholder."
+regex = '''(?i)(?:phone_?number_?ids?|waba_?ids?|business_?account_?ids?)[`"']?\s*[:=|]\s*[`"']?\d{10,}'''
+keywords = ["phone", "waba", "business"]
+
 [allowlist]
 description = "Test-only values"
 regexTarget = "line"

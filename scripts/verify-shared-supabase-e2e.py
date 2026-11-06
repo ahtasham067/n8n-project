@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """E2E verification for shared Supabase database (SmileCare lifecycle)."""
+import os
 import json
 import sys
 import time
@@ -19,7 +20,9 @@ HDR = {
 }
 DATE = "2026-08-25"
 DOC = "DOC-003"
-PHONE = "923025889452"
+PHONE = os.environ.get("E2E_TEST_PHONE", "").strip()
+if not PHONE:
+    raise SystemExit("Set E2E_TEST_PHONE to the test patient's number (digits, no +).")
 PATIENT = "Ahtasham Naeem"
 
 

@@ -131,8 +131,8 @@ secrets before starting; keep them out of git.
 | `WHATSAPP_ACCESS_TOKEN` (Meta **System User** token generated **for the production app**, expiry Never) | |
 | `WHATSAPP_PHONE_NUMBER_ID` / `WHATSAPP_ALLOWED_PHONE_NUMBER_IDS` (real number's Phone Number ID) | |
 | `WHATSAPP_CLIENT_SECRET` / Meta **App Secret** | |
-| `WHATSAPP_CLIENT_ID` / Meta **App ID** (production: `1755561068820381` "Appointment Syatem"; local dev keeps `1452204086838529`) | |
-| `WHATSAPP_BUSINESS_ACCOUNT_ID` / WABA ID (the real number's WABA; `1628386515555176` is the Meta *test* WABA) | |
+| `WHATSAPP_CLIENT_ID` / Meta **App ID** (production: `<PROD_APP_ID>` "Appointment Syatem"; local dev keeps `<LOCAL_APP_ID>`) | |
+| `WHATSAPP_BUSINESS_ACCOUNT_ID` / WABA ID (the real number's WABA; `<TEST_WABA_ID>` is the Meta *test* WABA) | |
 | Groq API key | |
 | SMTP user / password (optional — error-alert emails) | |
 
@@ -306,7 +306,7 @@ WHATSAPP_ALLOWED_PHONE_NUMBER_IDS=<real-phone-number-id>
 # Optional — only if you will re-sync WhatsApp creds with apply-whatsapp-auth.py on the VM
 # WHATSAPP_ACCESS_TOKEN=<system-user-token-for-production-app>
 # WHATSAPP_BUSINESS_ACCOUNT_ID=<real-waba-id>
-# WHATSAPP_CLIENT_ID=1755561068820381
+# WHATSAPP_CLIENT_ID=<PROD_APP_ID>
 # WHATSAPP_CLIENT_SECRET=<production-meta-app-secret>
 ```
 
@@ -447,14 +447,14 @@ set both vars in `~/smilecare-n8n/.env` to the real Phone Number ID (Meta → Wh
 Setup, or the diagnostic output), then `docker compose -f docker-compose.prod.yml up -d`.
 `diagnose-whatsapp-webhook.py` stage 7 fails if `PHONE_NUMBER_ID` is not on your WABA.
 
-> **Superseded (2026-10-21):** production moves to its own app `1755561068820381` and the
-> clinic's real number; local dev keeps app `1452204086838529` + the test number. See
+> **Superseded (2026-10-21):** production moves to its own app `<PROD_APP_ID>` and the
+> clinic's real number; local dev keeps app `<LOCAL_APP_ID>` + the test number. See
 > `WHATSAPP_REAL_NUMBER_SETUP.md`. Historical note:
 >
 > **Drift resolved (2026-09-13):** `.env.meta`, `.env`/`.env.docker`, and the workflow JSON
-> now all agree on one Meta app — `META_APP_ID` / `WHATSAPP_CLIENT_ID=1452204086838529`,
+> now all agree on one Meta app — `META_APP_ID` / `WHATSAPP_CLIENT_ID=<LOCAL_APP_ID>`,
 > App Secret `<meta-app-secret>` (never write the real value in docs), `WHATSAPP_WABA_ID` /
-> `WHATSAPP_BUSINESS_ACCOUNT_ID=1628386515555176`, `WHATSAPP_PHONE_NUMBER_ID=1296266210241103`.
+> `WHATSAPP_BUSINESS_ACCOUNT_ID=<TEST_WABA_ID>`, `WHATSAPP_PHONE_NUMBER_ID=<TEST_PHONE_NUMBER_ID>`.
 > If they ever diverge again, the diagnostic scripts are the arbiter — run them and follow
 > the earliest FAIL.
 
@@ -510,7 +510,7 @@ curl -sS -X POST "https://iipilbnsfaiizzlzzfcv.supabase.co/rest/v1/appointments"
   -H "Authorization: Bearer <cloud-service-role-key>" \
   -H "Content-Type: application/json" -H "Prefer: return=representation" \
   -d '{"appointment_id":"APT-DEPLOYCHECK","clinic_id":"CLINIC-SMILECARE",
-       "patient_name":"Deploy Check","phone_number":"+923000000000",
+       "patient_name":"Deploy Check","phone_number":"+92XXXXXXXXXX",
        "doctor_id":"DOC-003","doctor_name":"Dr. Bilal Hussain",
        "appointment_date":"2099-01-01","appointment_time":"10:00","status":"booked"}'
 #    Expect 201 and a toast + bell on the open dashboard WITHOUT refreshing.

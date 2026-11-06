@@ -39,15 +39,15 @@ Nothing was sent or changed in Meta.
 
 | Item | Value / state |
 |---|---|
-| Business portfolio | "Dr Appointment Syatem" — `921261627705693`, **not verified** (health error `141010`, status LIMITED) |
-| Local Meta app | "Appointment Syatem Local" — App ID `1452204086838529` |
-| Second Meta app | "Appointment Syatem" — App ID `1755561068820381` (**chosen for production**) |
-| Current WABA | "Test WhatsApp Business Account" — `1628386515555176` |
+| Business portfolio | "Dr Appointment Syatem" — `<BUSINESS_PORTFOLIO_ID>`, **not verified** (health error `141010`, status LIMITED) |
+| Local Meta app | "Appointment Syatem Local" — App ID `<LOCAL_APP_ID>` |
+| Second Meta app | "Appointment Syatem" — App ID `<PROD_APP_ID>` (**chosen for production**) |
+| Current WABA | "Test WhatsApp Business Account" — `<TEST_WABA_ID>` |
 | WABA health | **`can_send_message: BLOCKED`**. Error `141006`: payment method error, which blocks business-initiated messages |
-| Current sender | `+1 555-205-1341` "Test Number" (Meta test number). Phone Number ID `1296266210241103`, CONNECTED, quality GREEN, TIER_250 |
-| Apps subscribed to the WABA | `1452204086838529` (Local), `1755561068820381` ("Appointment Syatem"), and Meta's internal "WA DevX Webhook Events 1P App" (ignore it) |
-| Webhook (app 1452…) | object `whatsapp_business_account`, field `messages`, active. Callback is the current `trycloudflare.com` tunnel, so **local n8n currently receives the test number's messages** |
-| Access token (`.env.docker`) | System User token, never expires. Scopes `whatsapp_business_messaging` and `whatsapp_business_management`. Issued for app 1452… |
+| Current sender | `<TEST_DISPLAY_NUMBER>` "Test Number" (Meta test number). Phone Number ID `<TEST_PHONE_NUMBER_ID>`, CONNECTED, quality GREEN, TIER_250 |
+| Apps subscribed to the WABA | `<LOCAL_APP_ID>` (Local), `<PROD_APP_ID>` ("Appointment Syatem"), and Meta's internal "WA DevX Webhook Events 1P App" (ignore it) |
+| Webhook (app <LOCAL_APP_ID>) | object `whatsapp_business_account`, field `messages`, active. Callback is the current `trycloudflare.com` tunnel, so **local n8n currently receives the test number's messages** |
+| Access token (`.env.docker`) | System User token, never expires. Scopes `whatsapp_business_messaging` and `whatsapp_business_management`. Issued for app <LOCAL_APP_ID> |
 | Message templates | Only Meta's samples (`hello_world`, `jaspers_market_*`). **No clinic templates** |
 
 ### n8n / repo side
@@ -59,7 +59,7 @@ Nothing was sent or changed in Meta.
 | Inbound path | WhatsApp Trigger → Normalize → **Allowed Business Number?** *(new)* → Detect Message Type → (voice: download + Groq transcription) → Dental Clinic Config → Only Real Messages → Agent (8 tool sub-workflows → Supabase) → Send WhatsApp Reply |
 | Credentials | **WhatsApp account** (`whatsAppApi`: token + WABA ID), used by Send Reply and voice download. **WhatsApp OAuth account** (`whatsAppTriggerApi`: App ID + App Secret), used by the trigger to register the webhook and verify `X-Hub-Signature-256` |
 | How the webhook is registered | When you publish the agent, n8n calls `POST /{app-id}/subscriptions` with the App ID and App Secret. This is **app-level**: n8n then receives messages for **every WABA subscribed to that app**. Unpublishing deletes the subscription |
-| Sender (before this change) | **Hardcoded** `phoneNumberId: "1296266210241103"` in *Send WhatsApp Reply* and in *Send WhatsApp Notification* (`Send Notification.json`) |
+| Sender (before this change) | **Hardcoded** `phoneNumberId: "<TEST_PHONE_NUMBER_ID>"` in *Send WhatsApp Reply* and in *Send WhatsApp Notification* (`Send Notification.json`) |
 | `Send Notification` workflow | In the repo, but **not imported** into local n8n. Needs `N8N_NOTIFY_SHARED_SECRET`, which is not set locally. Sends free-form text, so delivery is only reliable inside the 24-hour window |
 | Docs | `PRODUCTION_DEPLOYMENT.md` had the Meta App Secret in plain text. It has been **redacted**. The file was never committed. Rotate the secret if the file was ever shared |
 
@@ -94,8 +94,8 @@ Nothing was sent or changed in Meta.
 
 | Term | What it is | Where it appears |
 |---|---|---|
-| **Sender / business number** | The clinic's number that patients message. Today it is the test number `+1 555-205-1341`; after this guide it is the new SIM | Identified in the API **only by its Phone Number ID** (a long numeric ID, *not* the phone number). Webhook `metadata.phone_number_id`; env `WHATSAPP_PHONE_NUMBER_ID` |
-| **Recipient / patient number** | Any WhatsApp user. For testing, **your personal phone** | `wa_id` in international format **without `+`**, e.g. `923001234567`. Webhook `messages[0].from`; workflow `phone_number`; DB `appointments.phone_number`; env `WHATSAPP_TEST_RECIPIENT` |
+| **Sender / business number** | The clinic's number that patients message. Today it is the test number `<TEST_DISPLAY_NUMBER>`; after this guide it is the new SIM | Identified in the API **only by its Phone Number ID** (a long numeric ID, *not* the phone number). Webhook `metadata.phone_number_id`; env `WHATSAPP_PHONE_NUMBER_ID` |
+| **Recipient / patient number** | Any WhatsApp user. For testing, **your personal phone** | `wa_id` in international format **without `+`**, e.g. `92XXXXXXXXXX`. Webhook `messages[0].from`; workflow `phone_number`; DB `appointments.phone_number`; env `WHATSAPP_TEST_RECIPIENT` |
 
 You cannot test by messaging the business number from itself. The clinic SIM is the
 **sender**, and your personal phone is the **patient**.
@@ -146,7 +146,7 @@ Do these in order. Keep a private note of each ID as you go (§8).
 ### A1. Check the business portfolio
 1. Open **business.facebook.com** → **Settings** (Business settings / Business portfolio
    settings) → **Business info**. Confirm you're in **"Dr Appointment Syatem"**
-   (`921261627705693`).
+   (`<BUSINESS_PORTFOLIO_ID>`).
 2. Fix the business name, address, website and email now if needed. Verification (A9) checks
    them against your documents.
 
@@ -224,15 +224,15 @@ it returns `133016` and blocks registration for 72 h, so don't retry in a loop.
 
 ### A7. Subscribe the local app to the new WABA
 This makes the real number's inbound messages reach the app's webhook, which is local n8n.
-The token belongs to app 1452…, so the call subscribes that app.
+The token belongs to app <LOCAL_APP_ID>, so the call subscribes that app.
 
 ```bash
 curl -s -X POST "$GRAPH/<REAL_WABA_ID>/subscribed_apps" -H "Authorization: Bearer $TOKEN"
 curl -s "$GRAPH/<REAL_WABA_ID>/subscribed_apps" -H "Authorization: Bearer $TOKEN"
-# expect "Appointment Syatem Local" (1452204086838529) in the list
+# expect "Appointment Syatem Local" (<LOCAL_APP_ID>) in the list
 ```
 
-**Do not** subscribe the production app (1755…) yet. That is a cutover step (D4).
+**Do not** subscribe the production app (<PROD_APP_ID>) yet. That is a cutover step (D4).
 
 ### A8. Display name status
 **WhatsApp Manager → Account tools → Phone numbers** → the number → **Name status**.
@@ -286,7 +286,7 @@ though A6 and A7 succeeded:
 2. Switch **App Mode** to **Live** (the top bar toggle, or **Publish**).
 
 A Business app that only manages your own WABA doesn't need App Review for these two
-permissions. The production app (1755…) should be Live anyway (D1).
+permissions. The production app (<PROD_APP_ID>) should be Live anyway (D1).
 
 ---
 
@@ -402,7 +402,7 @@ cd "/media/ahtasham/Partion C2/projects/n8n-project"
 GRAPH=https://graph.facebook.com/v21.0
 TOKEN=$(grep '^WHATSAPP_ACCESS_TOKEN=' .env.docker | cut -d= -f2-)
 KEY=$(grep '^SUPABASE_SERVICE_ROLE_KEY=' .env.docker | cut -d= -f2-)
-PATIENT=<PATIENT_NUMBER>      # e.g. 923001234567
+PATIENT=<PATIENT_NUMBER>      # e.g. 92XXXXXXXXXX
 appts() { curl -s "http://127.0.0.1:54321/rest/v1/appointments?clinic_id=eq.CLINIC-SMILECARE&phone_number=eq.$PATIENT&select=appointment_id,appointment_date,appointment_time,status,source,created_at&order=created_at.desc&limit=5" -H "apikey: $KEY" -H "Authorization: Bearer $KEY"; echo; }
 ```
 
@@ -427,7 +427,7 @@ delete all appointments.
 | 14 | Error path: wrong date | Ask for a date in the past | The tool rejects it, and the agent explains politely |
 | 15 | Error path: fallback | (Optional) Temporarily use an invalid Groq key, or send many messages quickly | *Agent Error Fallback* sends a sensible message. No fabricated booking. Restore the key afterwards |
 | 16 | **Real number is not answered locally** | From your phone, message the **real** clinic number | Before D4 step 2: an execution that stops at *Allowed Business Number?* (false branch, no reply). After D4 step 2: no local execution at all |
-| 17 | Test number still works | Message `+1 555-205-1341` from your phone (it must be in API Setup's allowed list) | The reply comes **from the test number**. This proves sender routing per number |
+| 17 | Test number still works | Message `<TEST_DISPLAY_NUMBER>` from your phone (it must be in API Setup's allowed list) | The reply comes **from the test number**. This proves sender routing per number |
 | 18 | Logs clean | n8n **Executions** filtered by *Error*, plus `docker logs n8n --since 30m` | No unexpected errors. The Error Handler email only fired for intentional tests |
 
 **Reading executions:** open an execution and click each node to see its input and output.
@@ -440,24 +440,24 @@ doesn't receive a reply even though the node is green, check §10.
 ## Part D — Production (approval-gated; nothing here has been done)
 
 Production runs on the Oracle VM (`https://smilecare-n8n.duckdns.org`). Its `n8n_data` volume
-was copied from local, so it currently has the same credentials (app 1452…) and the old
+was copied from local, so it currently has the same credentials (app <LOCAL_APP_ID>) and the old
 hardcoded workflow.
 
 The target state:
 
 | | Local dev | Production |
 |---|---|---|
-| Meta app | "Appointment Syatem Local" `1452204086838529` | "Appointment Syatem" `1755561068820381` |
+| Meta app | "Appointment Syatem Local" `<LOCAL_APP_ID>` | "Appointment Syatem" `<PROD_APP_ID>` |
 | Callback | trycloudflare tunnel | `https://smilecare-n8n.duckdns.org/webhook/e60f653f-a2f6-4686-909b-f3cca62cad2c/webhook` |
 | Numbers answered (`WHATSAPP_ALLOWED_PHONE_NUMBER_IDS`) | test number only | real number only |
-| Real WABA `subscribed_apps` | **not** 1452… | 1755… |
+| Real WABA `subscribed_apps` | **not** <LOCAL_APP_ID> | <PROD_APP_ID> |
 
 Follow `PRODUCTION_UPDATE.md` for every VM change. Back up the `n8n_data` volume first.
 Never run `start-n8n-whatsapp.sh` on the VM.
 
-### D1. [YOU] Prepare the production app (1755…)
+### D1. [YOU] Prepare the production app (<PROD_APP_ID>)
 1. **developers.facebook.com → "Appointment Syatem" → App settings → Basic**:
-   - Note the **App ID** (`1755561068820381`).
+   - Note the **App ID** (`<PROD_APP_ID>`).
    - Reveal the **App Secret** and copy it to your password manager.
    - Fill in Privacy Policy URL, icon, category and data deletion.
    - Set **App Mode → Live**.
@@ -473,7 +473,7 @@ Never run `start-n8n-whatsapp.sh` on the VM.
      - Expiration **Never**.
    - Copy the token once into your password manager.
 4. Check it: `curl -s "https://graph.facebook.com/v21.0/debug_token?input_token=<PROD_TOKEN>" -H "Authorization: Bearer <PROD_TOKEN>"`
-   should show `"app_id":"1755561068820381"`, `"type":"SYSTEM_USER"`, `"expires_at":0`.
+   should show `"app_id":"<PROD_APP_ID>"`, `"type":"SYSTEM_USER"`, `"expires_at":0`.
 5. **Separate the tokens.** Each System User should reach one WABA only.
    - Prod's System User gets the real WABA.
    - Local's System User gets the test WABA only.
@@ -513,15 +513,15 @@ python3 scripts/verify-whatsapp-token.py --no-send   # expect "Profile real: …
 
 If you sync credentials with the script instead of the UI, also set
 `WHATSAPP_ACCESS_TOKEN=<PROD_TOKEN>`, `WHATSAPP_BUSINESS_ACCOUNT_ID=<REAL_WABA_ID>`,
-`WHATSAPP_CLIENT_ID=1755561068820381` and `WHATSAPP_CLIENT_SECRET=<prod app secret>`. See
+`WHATSAPP_CLIENT_ID=<PROD_APP_ID>` and `WHATSAPP_CLIENT_SECRET=<prod app secret>`. See
 `deploy/.env.production.example`.
 
 ### D3. Production workflow and credentials (VM n8n UI)
-1. Open the agent on the VM → **Unpublish**. Its credential still points at app 1452…, so this
+1. Open the agent on the VM → **Unpublish**. Its credential still points at app <LOCAL_APP_ID>, so this
    removes app 1452's subscription. That may also be local's subscription: re-publish locally
    later if you still need the test number.
 2. **Credentials → WhatsApp OAuth account**:
-   - Client ID: `1755561068820381`.
+   - Client ID: `<PROD_APP_ID>`.
    - Client Secret: the prod App Secret.
    - Save.
 3. **Credentials → WhatsApp account**:
@@ -544,17 +544,18 @@ If you sync credentials with the script instead of the UI, also set
      `{{ $('Normalize WhatsApp Message').item.json.phone_number_id || $env.WHATSAPP_PHONE_NUMBER_ID }}`
      The hardcoded test ID must be gone.
 5. Re-check *Dental Clinic Config* and the tool IDs, as listed in C-2.
-6. Optional: import or update `Send Notification` the same way, if the dashboard uses it in
-   production.
+6. If `Send Notification` exists on the VM, don't import it. Open it and replace the code in
+   *Validate Request* with the code from the repo's `Send Notification.json`, then **Save**. Its
+   new check answers 403 unless the sender is in the allowlist.
 
 ### D4. Cutover order (avoids double replies and gaps)
 Do these steps one at a time.
 
 1. **Local stops answering the real number.** *(Done 2026-10-25. Local is on the test
    profile, and a signed fake webhook for another number stopped at the guard.)*
-   - Set local `WHATSAPP_ALLOWED_PHONE_NUMBER_IDS=1296266210241103` and
-     `WHATSAPP_PHONE_NUMBER_ID=1296266210241103`.
-   - Set `WHATSAPP_BUSINESS_ACCOUNT_ID` back to `1628386515555176`.
+   - Set local `WHATSAPP_ALLOWED_PHONE_NUMBER_IDS=<TEST_PHONE_NUMBER_ID>` and
+     `WHATSAPP_PHONE_NUMBER_ID=<TEST_PHONE_NUMBER_ID>`.
+   - Set `WHATSAPP_BUSINESS_ACCOUNT_ID` back to `<TEST_WABA_ID>`.
    - Run B3.
 2. **Unsubscribe the local app from the real WABA**, using the **local** token. You can do
    this any time after step 1: local already drops the real number's messages, but they
@@ -564,33 +565,33 @@ Do these steps one at a time.
    ```bash
    curl -s -X DELETE "$GRAPH/<REAL_WABA_ID>/subscribed_apps" -H "Authorization: Bearer $TOKEN"
    curl -s "$GRAPH/<REAL_WABA_ID>/subscribed_apps" -H "Authorization: Bearer $TOKEN"
-   # expect only "Appointment Syatem" (1755…), not "Appointment Syatem Local" (1452…)
+   # expect only "Appointment Syatem" (<PROD_APP_ID>), not "Appointment Syatem Local" (<LOCAL_APP_ID>)
    ```
 
 3. **Production publishes.** On the VM, open the agent → **Publish**. n8n registers the DuckDNS
-   callback on app 1755….
+   callback on app <PROD_APP_ID>.
 4. **Subscribe the production app to the real WABA**, using the **production** token:
 
    ```bash
    curl -s -X POST "https://graph.facebook.com/v21.0/<REAL_WABA_ID>/subscribed_apps" -H "Authorization: Bearer <PROD_TOKEN>"
    curl -s "https://graph.facebook.com/v21.0/<REAL_WABA_ID>/subscribed_apps" -H "Authorization: Bearer <PROD_TOKEN>"
-   # expect 1755561068820381 and NOT 1452204086838529
+   # expect <PROD_APP_ID> and NOT <LOCAL_APP_ID>
    ```
 
 5. **Diagnose on the VM:**
 
    ```bash
    cd ~/smilecare-n8n
-   export APP_ID=1755561068820381 APP_SECRET='<prod app secret>' WABA_ID='<REAL_WABA_ID>' \
+   export APP_ID=<PROD_APP_ID> APP_SECRET='<prod app secret>' WABA_ID='<REAL_WABA_ID>' \
           ACCESS_TOKEN='<PROD_TOKEN>' PHONE_NUMBER_ID='<REAL_PHONE_NUMBER_ID>' \
           PUBLIC_URL='https://smilecare-n8n.duckdns.org'
    python3 scripts/diagnose-whatsapp-webhook.py
    ```
 
    All stages should PASS. Fix the earliest FAIL first.
-6. **Optional tidy-up.** App 1755… is also subscribed to the **test** WABA. Production's guard
+6. **Optional tidy-up.** App <PROD_APP_ID> is also subscribed to the **test** WABA. Production's guard
    already drops test-number messages, but you can unsubscribe it with
-   `curl -X DELETE "…/1628386515555176/subscribed_apps" -H "Authorization: Bearer <PROD_TOKEN>"`.
+   `curl -X DELETE "…/<TEST_WABA_ID>/subscribed_apps" -H "Authorization: Bearer <PROD_TOKEN>"`.
 
 ### D5. Production tests
 Repeat Part C tests 3, 4 and 7–13 against production:
@@ -619,8 +620,8 @@ Repeat Part C tests 3, 4 and 7–13 against production:
 - **Workflow**: re-import the previous JSON into the same workflow. Backups are in `backups/`
   and in the VM volume backup.
 - **Number routing**:
-  1. Unsubscribe 1755… from the real WABA.
-  2. Re-subscribe 1452… (A7).
+  1. Unsubscribe <PROD_APP_ID> from the real WABA.
+  2. Re-subscribe <LOCAL_APP_ID> (A7).
   3. Put the real ID back into the local allowlist and run B3.
 - **Credentials**: restore the old values in the two credentials, unpublish, then publish again.
 
@@ -632,9 +633,9 @@ Repeat Part C tests 3, 4 and 7–13 against production:
 |---|---|---|---|
 | Real Phone Number ID | API Setup → From → Phone number ID | no | `.env.docker` / VM `.env` (`WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_ALLOWED_PHONE_NUMBER_IDS`) |
 | Real WABA ID | API Setup / WhatsApp Manager | no | `WHATSAPP_BUSINESS_ACCOUNT_ID` → *WhatsApp account* credential |
-| Test Phone Number ID / WABA | `1296266210241103` / `1628386515555176` | no | local TEST profile |
-| Local App ID | `1452204086838529` | no | `WHATSAPP_CLIENT_ID` (local) → *WhatsApp OAuth account* |
-| Prod App ID | `1755561068820381` | no | prod *WhatsApp OAuth account* |
+| Test Phone Number ID / WABA | `<TEST_PHONE_NUMBER_ID>` / `<TEST_WABA_ID>` | no | local TEST profile |
+| Local App ID | `<LOCAL_APP_ID>` | no | `WHATSAPP_CLIENT_ID` (local) → *WhatsApp OAuth account* |
+| Prod App ID | `<PROD_APP_ID>` | no | prod *WhatsApp OAuth account* |
 | App Secret (per app) | App settings → Basic → Show | **yes** | `WHATSAPP_CLIENT_SECRET` (gitignored env) / n8n credential / password manager |
 | System User token (per app) | Business settings → System users → Generate token | **yes** | `WHATSAPP_ACCESS_TOKEN` (gitignored env) / n8n credential / password manager |
 | Token permissions | `whatsapp_business_messaging`, `whatsapp_business_management` | — | set when generating the token |
@@ -659,14 +660,14 @@ Gitignored (never commit): `.env`, `.env.docker`, `.env.meta`, `deploy/.env`,
 - [ ] A4: copy `<REAL_PHONE_NUMBER_ID>` and `<REAL_WABA_ID>`
 - [ ] A5: assign the new WABA to the System User (Full control)
 - [ ] A6: register the number with your new 6-digit PIN (store the PIN)
-- [ ] A7: subscribe app 1452… to the new WABA
+- [ ] A7: subscribe app <LOCAL_APP_ID> to the new WABA
 - [ ] A8: display name approved or available
 - [ ] A10: submit utility templates (English and Urdu)
 - [ ] A11: set the local app to Live **only if** real-number webhooks don't arrive
 
 **For production:**
 - [ ] A9: business verification (recommended)
-- [ ] D1: prod app 1755…: App Secret, Live mode, System User token for that app, asset access
+- [ ] D1: prod app <PROD_APP_ID>: App Secret, Live mode, System User token for that app, asset access
 - [ ] D3: update the prod n8n credentials (in the VM UI)
 - [ ] D4 steps 2 and 4: change the WABA `subscribed_apps`
 
@@ -776,8 +777,8 @@ Gitignored (never commit): `.env`, `.env.docker`, `.env.meta`, `deploy/.env`,
 - [ ] No unexpected errors in Executions or `docker logs n8n`
 
 **Production (after approval):**
-- [ ] Prod token `debug_token` → app 1755…, SYSTEM_USER, never expires
-- [ ] Real WABA `subscribed_apps` = 1755… only
+- [ ] Prod token `debug_token` → app <PROD_APP_ID>, SYSTEM_USER, never expires
+- [ ] Real WABA `subscribed_apps` = <PROD_APP_ID> only
 - [ ] `diagnose-whatsapp-webhook.py` on the VM: no FAIL
 - [ ] Inbound → prod execution → reply from the clinic number
 - [ ] Booking appears in cloud Supabase and on the Vercel dashboard
