@@ -48,12 +48,12 @@ agent + tool workflows (Oracle VM).
 
 | You changed… | Do this |
 | --- | --- |
-| Web portal UI / an API route / anything under `src/**` | Commit → push to `main`. Vercel auto-builds and deploys. Verify on the production URL (§F). |
-| Portal dependency or config (`package.json`, `next.config.ts`, `tsconfig.json`) | Same as above. If the Node version must change, set Vercel → Settings → General → Node.js Version **first**, then push. |
+| Web portal UI / an API route / anything under `src/**` | Open a PR and merge it. GitHub Actions deploys it to Vercel (the dashboard's `docs/CI_CD.md`); Vercel's own Git deployments are off. Verify on the production URL (§F). |
+| Portal dependency or config (`package.json`, `next.config.ts`, `tsconfig.json`) | Same as above. If the Node version must change, set Vercel → Settings → General → Node.js Version **first**, then merge. |
 | A portal environment variable | Vercel → Settings → Environment Variables → edit → **Redeploy** (Deployments → ⋯ → Redeploy). Mandatory for any `NEXT_PUBLIC_*`. |
-| DB schema, RLS policy, function, or RPC | New **additive** migration file → back up (§D) → `npx supabase db push` to the linked prod ref → verify (§F). Redeploy the portal only if it depends on the new shape. See §C-1. |
+| DB schema, RLS policy, function, or RPC | New **additive** migration file → back up (§D) → Run workflow on the dashboard's `db-migrate.yml` (dry run, then apply) → verify (§F). A merge never applies migrations. Redeploy the portal only if it depends on the new shape. See §C-1. |
 | Doctor / clinic reference data (hours, `clinic_settings`, a new doctor) | Edit through the portal's admin UI, **or** run a hand-written idempotent `insert … on conflict do update` in the SQL Editor. **Not** the seed script. |
-| n8n workflow logic — the agent or any tool sub-workflow | Change the JSON in a PR, merge, then Actions → **Deploy** (`deploy/vm/README.md`): CI checks, your approval, volume backup, import by fixed id, publish, health check, automatic restore on failure. Manual fallback: §C-2, edit **in place** in the prod n8n UI and Download the JSON back to the repo. Never import as a new workflow; never delete + recreate. |
+| n8n workflow logic — the agent or any tool sub-workflow | Change the JSON in a PR and merge it. **Deploy** (`deploy/vm/README.md`) runs on the merge when the repo variable `AUTO_DEPLOY_PRODUCTION` is `true`; otherwise use Run workflow on it. It does the CI checks, volume backup, import by fixed id, publish, health checks, and an automatic restore on failure. Manual fallback: §C-2, edit **in place** in the prod n8n UI and Download the JSON back to the repo. Never import as a new workflow; never delete + recreate. |
 | An n8n Code-node script (`agent-error-fallback.js`, `clinic-time-snippet.js`) | Open the workflow on prod, edit the Code node's contents on the canvas, Save (§C-2). Keep `scripts/agent-error-fallback.js` / `scripts/clinic-time-snippet.js` and the repo JSON in sync. Remember rule A-9. |
 | An n8n environment variable (`SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, URL vars, `TZ`, `CLINIC_TIMEZONE`) | Edit `~/smilecare-n8n/.env` on the VM → `docker compose -f docker-compose.prod.yml up -d` (recreates the container; workflows stay Active, credentials still decrypt). §C-3. |
 | An n8n credential (WhatsApp token, Groq key, App Secret, SMTP) | §C-4. n8n UI on the VM, or `scripts/apply-whatsapp-auth.py` on the VM. Re-test with a **new** WhatsApp message. |
@@ -81,7 +81,7 @@ agent + tool workflows (Oracle VM).
 
 2. **Back up the data first** (§D — a `--data-only` dump).
 
-3. **Apply to production** (the linked project):
+3. **Apply to production:** Run workflow on the dashboard's `db-migrate.yml`, as a dry run first, then with **apply** ticked and the project ref typed in. To do it by hand on the linked project:
 
    ```bash
    npx supabase link --project-ref iipilbnsfaiizzlzzfcv    # once per machine
@@ -97,8 +97,8 @@ agent + tool workflows (Oracle VM).
    -- still: appointments, notifications
    ```
 
-5. **Redeploy the portal** only if its code now depends on the new column/RPC (push to
-   `main`). n8n picks up new columns automatically (it speaks raw PostgREST); it only needs
+5. **Redeploy the portal** only if its code now depends on the new column/RPC (merge a PR, or
+   Run workflow on Deploy). n8n picks up new columns automatically (it speaks raw PostgREST); it only needs
    a workflow change if a tool must now read/write the new field.
 
 **RLS changes:** after pushing, sign into the portal as a **non-admin** (`desk@smilecare.local`)

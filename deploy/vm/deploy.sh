@@ -12,6 +12,9 @@
 #   4. Start n8n, wait for /healthz/readiness, and check every id is published.
 #   5. If anything fails after step 2, put the archived volume back and start n8n.
 #
+# It runs detached from the SSH session (lib.sh), so a dropped connection can't
+# stop it half way. Output goes to last-run.log in the backup directory.
+#
 # Credentials are never imported, decrypted or printed.
 #
 #   deploy.sh <commit-sha>
@@ -26,6 +29,7 @@ REPO="$(cd "$HERE/../.." && pwd)"
 SHA="${1:?usage: deploy.sh <commit-sha>}"
 [ "$(git -C "$REPO" rev-parse HEAD)" = "$SHA" ] || die "the checkout in $REPO is not at $SHA"
 
+detach_from_ssh "$@"
 take_lock
 
 IDS=()
@@ -45,6 +49,7 @@ mkdir -p "$BK"
 log "deploying ${SHA:0:7}: ${#IDS[@]} workflows; backup $BACKUP_ID"
 
 # 1. Export, and check credentials.
+trap 'log "deploy failed before n8n was stopped: nothing changed"' ERR
 docker exec "$CONTAINER" sh -c '
   rm -rf /tmp/clinidesk-export && mkdir -p /tmp/clinidesk-export &&
   n8n export:workflow --all --output=/tmp/clinidesk-export/workflows.json &&

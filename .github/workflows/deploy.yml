@@ -1,7 +1,7 @@
 # Production pipeline for the Oracle VM: a push to main → every check in ci.yml
-# on the merged commit → approval (environment production-vm) → over SSH,
-# deploy/vm/deploy.sh: back up, import the workflows by fixed id, publish, start,
-# health check, and restore the backup automatically if anything fails.
+# on the merged commit → over SSH, deploy/vm/deploy.sh: back up, import the
+# workflows by fixed id, publish, start, health check, and restore the backup
+# automatically if anything fails → a health check on the public address.
 #
 # - A push deploys only when the repo variable AUTO_DEPLOY_PRODUCTION is "true".
 #   Keep it unset until the SaaS cutover: main's workflows need the SaaS
@@ -28,6 +28,9 @@ permissions:
 defaults:
   run:
     shell: bash
+
+env:
+  PUBLIC_URL: https://smilecare-n8n.duckdns.org
 
 jobs:
   checks:
@@ -70,6 +73,23 @@ jobs:
             -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts \
             -o ServerAliveInterval=30 -o ConnectTimeout=20 \
             "$VM_USER@$VM_HOST" "deploy $GITHUB_SHA"
+
+      # deploy.sh only checks n8n from the VM itself. This checks the address the
+      # dashboard and Meta use, through Caddy. A failure here restores nothing: the
+      # deploy doesn't touch Caddy, so a restore wouldn't bring the address back.
+      - name: Public health check
+        run: |
+          code=000
+          for _ in 1 2 3 4 5 6; do
+            code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 20 "$PUBLIC_URL/healthz" || true)"
+            [ "$code" = 200 ] && break
+            sleep 10
+          done
+          echo "$PUBLIC_URL/healthz → $code" | tee -a "$GITHUB_STEP_SUMMARY"
+          if [ "$code" != 200 ]; then
+            echo "::error::n8n is healthy on the VM, but its public address answers $code. Check Caddy and the Oracle firewall (deploy/vm/README.md)."
+            exit 1
+          fi
 
       - name: Remove the key
         if: always()

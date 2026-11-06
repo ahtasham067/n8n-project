@@ -1,7 +1,7 @@
 # Put production n8n back to a backup that a deploy took just before it changed
 # anything (deploy/vm/rollback.sh). The whole n8n_data volume goes back to that
-# moment, including executions and credentials edited since. Needs approval
-# (environment production-vm). See deploy/vm/README.md.
+# moment, including executions and credentials edited since. Needs "rollback"
+# typed in to confirm. See deploy/vm/README.md.
 name: Rollback
 
 on:

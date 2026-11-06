@@ -2,7 +2,8 @@
 # Put production n8n back to a backup that deploy.sh took: stop n8n, replace the
 # n8n_data volume with that backup's archive, start, health check. Everything in
 # the volume goes back to that moment, including executions and any credential
-# edited since. ssh-gate.sh runs it; rollback.yml calls the gate over SSH.
+# edited since. ssh-gate.sh runs it; rollback.yml calls the gate over SSH. Like
+# deploy.sh, it runs detached from the SSH session (lib.sh).
 #
 #   rollback.sh <backup-id | latest>
 #   rollback.sh list
@@ -24,9 +25,14 @@ if [ "$TARGET" = list ]; then
   fi
   log "backups, newest first:"
   backups
+  if [ -f "$BACKUP_ROOT/last-run.log" ]; then
+    log "last deploy or rollback, final lines:"
+    tail -n 5 "$BACKUP_ROOT/last-run.log"
+  fi
   exit 0
 fi
 
+detach_from_ssh "$@"
 take_lock
 
 if [ "$TARGET" = latest ]; then

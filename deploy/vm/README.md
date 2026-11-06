@@ -3,9 +3,8 @@
 `.github/workflows/deploy.yml` deploys main to production n8n over SSH:
 
 1. **Checks:** every `ci.yml` job, run again on the merged commit.
-2. **Approval:** the job waits in the `production-vm` environment until you approve it.
-3. **SSH:** the key can only run `ssh-gate.sh`. The gate fetches main, refuses any commit that isn't on it, checks the commit out in `~/clinidesk-n8n-repo`, and runs `deploy.sh`.
-4. **`deploy.sh`:**
+2. **SSH:** the key can only run `ssh-gate.sh`. The gate fetches main, refuses any commit that isn't on it, checks the commit out in `~/clinidesk-n8n-repo`, and runs `deploy.sh`.
+3. **`deploy.sh`:**
    - Exports every workflow and credential (credentials stay encrypted).
    - Refuses if a workflow being deployed uses a credential id production lacks. Nothing has changed at that point.
    - Stops n8n and archives the `n8n_data` volume.
@@ -13,8 +12,13 @@
    - Publishes those workflows, plus everything that was published before.
    - Starts n8n and checks `/healthz/readiness` and that every id is published.
    - On any failure after the stop, puts the archived volume back and starts n8n again.
+4. **Public check:** the job calls `/healthz` on the public address, through Caddy. A failure turns the run red but restores nothing, because the deploy doesn't touch Caddy.
 
-`rollback.yml` uses the same key and approval to run `rollback.sh` with a backup id, `latest` or `status`.
+There is no approval step: a merge is the approval. The `production-vm` environment only limits deploys to `main`.
+
+`rollback.yml` uses the same key to run `rollback.sh` with a backup id, `latest` or `status`. A rollback needs `rollback` typed in to confirm.
+
+**If the SSH connection drops**, `deploy.sh` and `rollback.sh` keep running on the VM, because they run detached from the session. The Actions run goes red without the result. To see what happened, run Rollback with `status`. It answers "another deploy or rollback is running" until the run has finished, then shows the final lines of `last-run.log`.
 
 What it never does:
 - Import, decrypt or print credentials.
@@ -27,7 +31,13 @@ Logs show counts and ids only, because this repo is public and so are its Action
 ## When deploys run
 
 - **A push to main** deploys only when the repo variable `AUTO_DEPLOY_PRODUCTION` is `true`. Leave it unset until the SaaS cutover: main's workflows need the SaaS dashboard (gateway, LLM proxy, `bot_*` RPCs), and production still runs the pre-SaaS ones.
-- **Run workflow** on Deploy always deploys main's head, after approval.
+- **Run workflow** on Deploy always deploys main's head.
+
+## Downtime
+
+n8n is stopped from the backup until the health check passes. A test on a laptop took about 5 minutes for 14 workflows, most of it publishing, because each `publish:workflow` starts a new n8n process. Time on the VM may differ.
+
+The dashboard doesn't replay what arrives in that time. `forwardToBot()` logs a failed forward and doesn't retry, and Meta has already had its `200`. So a patient who writes during a deploy gets no reply from the bot. Merge workflow changes at a quiet time.
 
 ## One-time setup
 
@@ -47,7 +57,7 @@ The private half (`clinidesk-n8n-deploy`) goes into the GitHub secret `N8N_VM_SS
 mkdir -p ~/bin ~/backups/n8n-deploy && chmod 700 ~/backups/n8n-deploy
 git clone https://github.com/ahtasham067/n8n-project.git ~/clinidesk-n8n-repo
 install -m 755 ~/clinidesk-n8n-repo/deploy/vm/ssh-gate.sh ~/bin/clinidesk-n8n-gate
-command -v python3 flock curl git docker   # all five must exist
+command -v python3 flock setsid curl git docker   # all six must exist
 ```
 
 The scripts expect:
@@ -90,7 +100,7 @@ Compare it with the VM's own fingerprint (on the VM: `ssh-keygen -lf /etc/ssh/ss
 | `N8N_VM_KNOWN_HOSTS` | The line from step 4 |
 | `N8N_VM_PORT` | Optional; 22 when unset |
 
-**Environment settings.** The `production-vm` environment has you as its required reviewer, and only `main` may deploy to it.
+**Environment settings.** Only `main` may deploy to the `production-vm` environment. It has no required reviewer.
 
 **Repo variable.** `AUTO_DEPLOY_PRODUCTION` = `true` only after the SaaS cutover.
 
@@ -128,7 +138,8 @@ Type the value in place of `<…>`. Don't leave it in shell history: start the c
 
 You can test the scripts against a throwaway n8n:
 1. Write a compose file with another container name, volume and port.
-2. Point the `N8N_*` overrides at it.
-3. Run `deploy.sh` from a clone checked out at the commit.
+2. Import at least one workflow into it, because the export step fails on an empty instance.
+3. Point the `N8N_*` overrides at it. `N8N_BACKUP_DIR` must be a path the Docker daemon can see.
+4. Run `deploy.sh` from a clone checked out at the commit.
 
 Never point them at your local `n8n` container or its `n8n_data` volume.
