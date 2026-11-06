@@ -15,6 +15,19 @@ on the local stack first, then move the same number to production on the Oracle 
 **Order of work:** read §1–§3, then do Part A (Meta), Part B (local config), and Part C
 (local tests). Do Part D (production) only after Part C passes and you approve the cutover.
 
+> **Status 2026-10-25: environments are separated by number.** Local dev uses **only** Meta's
+> test number. The real number belongs to production. The old "local testing of real number"
+> profile is retired.
+> - `.env.docker` has `WHATSAPP_NUMBER_PROFILE=test`.
+> - `./start-n8n-whatsapp.sh` refuses to start if the allowlist is empty or holds any number
+>   that is not a Meta test number (+1 555 …).
+> - `verify-whatsapp-token.py` runs the same check, and stops before sending, wherever the
+>   profile is set. Production sets `WHATSAPP_NUMBER_PROFILE=real`.
+>
+> Still to do: **D4 step 2** (unsubscribe the local app from the real WABA) and **D1 step 5**
+> (take the real WABA away from the local System User). Then the rest of Part D, which is
+> approval-gated.
+
 ---
 
 ## 1. Audit of the current integration (2026-10-21)
@@ -279,29 +292,34 @@ permissions. The production app (1755…) should be Live anyway (D1).
 
 ## Part B — Local configuration
 
-### B1. `.env.docker`: switch to the "local testing of real number" profile
-`.env.docker` now has a WhatsApp sender block. Today it runs the **TEST** profile. After Part A,
-edit those lines:
+### B1. `.env.docker`: the test profile (the only local profile)
+Local n8n uses Meta's **test number only**. The sender block in `.env.docker`:
 
 ```ini
-WHATSAPP_BUSINESS_ACCOUNT_ID=<REAL_WABA_ID>
-WHATSAPP_PHONE_NUMBER_ID=<REAL_PHONE_NUMBER_ID>
-WHATSAPP_ALLOWED_PHONE_NUMBER_IDS=1296266210241103,<REAL_PHONE_NUMBER_ID>
-WHATSAPP_TEST_RECIPIENT=<PATIENT_NUMBER>       # your personal phone, e.g. 923001234567 (no +)
+WHATSAPP_NUMBER_PROFILE=test
+WHATSAPP_BUSINESS_ACCOUNT_ID=<TEST_WABA_ID>
+WHATSAPP_PHONE_NUMBER_ID=<TEST_PHONE_NUMBER_ID>
+WHATSAPP_ALLOWED_PHONE_NUMBER_IDS=<TEST_PHONE_NUMBER_ID>
+WHATSAPP_TEST_RECIPIENT=<PATIENT_NUMBER>   # your phone, no +, on the test number's API Setup list
 ```
 
 What each one does:
-- `WHATSAPP_ALLOWED_PHONE_NUMBER_IDS` lists **both** numbers, so local n8n answers the test
-  number and the real number.
+- `WHATSAPP_NUMBER_PROFILE=test` makes `./start-n8n-whatsapp.sh` refuse to start unless all
+  of these hold, before it touches Docker or the tunnel:
+  - the allowlist is not empty;
+  - the fallback sender is in the allowlist;
+  - Graph reports every allowlisted ID as a Meta test number (always +1 555 …).
+
+  The check is read-only.
+- `WHATSAPP_ALLOWED_PHONE_NUMBER_IDS` is the inbound guard. The agent drops messages to any
+  other number, so local never answers the real number.
 - `WHATSAPP_PHONE_NUMBER_ID` is the fallback sender. It is also the sender for Send
   Notification and `verify-whatsapp-token.py`.
 - `WHATSAPP_BUSINESS_ACCOUNT_ID` is synced into the **WhatsApp account** credential by
   `apply-whatsapp-auth.py`. It is only used for n8n's dropdowns and template lists.
-- `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_CLIENT_ID` and `WHATSAPP_CLIENT_SECRET` don't change: same
-  local app, same System User.
 
-To go back to the test number: set both ID vars to `1296266210241103`, set
-`WHATSAPP_BUSINESS_ACCOUNT_ID=1628386515555176`, and repeat B3.
+The real number is tested in production (Part D), never locally. The earlier "local testing
+of real number" profile, which listed both IDs, is retired, and the start script refuses it.
 
 Read-only check, which sends nothing:
 
@@ -311,9 +329,8 @@ python3 scripts/verify-whatsapp-token.py --no-send
 
 Expect:
 - `Token app: Appointment Syatem Local`
-- `Sender: +92 … (Dr. Usama's …)`
+- `Profile test: <test-id> (+1 555 …) OK`
 - `status: CONNECTED`
-- no `WARN WABA 141006` (if it appears, finish A2)
 
 ### B2. Import the updated agent workflow into local n8n (one time)
 The repo's `WhatsApp AI Appointment Booking Agent.json` has the new routing. Import it **into
@@ -368,6 +385,12 @@ subscribe **messages**.
 
 ## Part C — Local testing checklist
 
+> **Local tests now use the test number only (2026-10-25).**
+> - Read "clinic number" below as the test number, and `<REAL_PHONE_NUMBER_ID>` as the test ID.
+> - The test number only replies to the up to 5 recipients in *API Setup → To*.
+> - Skip test 6 locally. Templates belong to the real WABA.
+> - Tests 3–13 against the real number run in **production** (D5), after you approve.
+
 Use your personal phone as the patient. Watch **n8n → Executions** while you test. Each
 message creates one agent execution, plus separate executions for any tool sub-workflows it
 calls.
@@ -403,7 +426,7 @@ delete all appointments.
 | 13 | Language | Message in Urdu script, Roman Urdu and English | Each reply matches the language. Never Hindi / Devanagari |
 | 14 | Error path: wrong date | Ask for a date in the past | The tool rejects it, and the agent explains politely |
 | 15 | Error path: fallback | (Optional) Temporarily use an invalid Groq key, or send many messages quickly | *Agent Error Fallback* sends a sensible message. No fabricated booking. Restore the key afterwards |
-| 16 | **Guard drops other numbers** | Temporarily set `WHATSAPP_ALLOWED_PHONE_NUMBER_IDS=1296266210241103`, then B3 again, then message the clinic number | The execution stops at *Allowed Business Number?* (false branch, no reply). Restore both IDs and run B3 again |
+| 16 | **Real number is not answered locally** | From your phone, message the **real** clinic number | Before D4 step 2: an execution that stops at *Allowed Business Number?* (false branch, no reply). After D4 step 2: no local execution at all |
 | 17 | Test number still works | Message `+1 555-205-1341` from your phone (it must be in API Setup's allowed list) | The reply comes **from the test number**. This proves sender routing per number |
 | 18 | Logs clean | n8n **Executions** filtered by *Error*, plus `docker logs n8n --since 30m` | No unexpected errors. The Error Handler email only fired for intentional tests |
 
@@ -451,6 +474,18 @@ Never run `start-n8n-whatsapp.sh` on the VM.
    - Copy the token once into your password manager.
 4. Check it: `curl -s "https://graph.facebook.com/v21.0/debug_token?input_token=<PROD_TOKEN>" -H "Authorization: Bearer <PROD_TOKEN>"`
    should show `"app_id":"1755561068820381"`, `"type":"SYSTEM_USER"`, `"expires_at":0`.
+5. **Separate the tokens.** Each System User should reach one WABA only.
+   - Prod's System User gets the real WABA.
+   - Local's System User gets the test WABA only.
+   - In **System users → (local's system user) → Assigned assets → WhatsApp accounts**,
+     remove the real WABA. Do this **after** step 3, if prod has its own system user.
+     Otherwise it cuts prod off too.
+   - From then on, the local token can't send from the real number, even if someone puts the
+     real ID back into `.env.docker`.
+   - Check it with the local token:
+     `curl -s "https://graph.facebook.com/v21.0/<REAL_PHONE_NUMBER_ID>?fields=id" -H "Authorization: Bearer $TOKEN"`
+     must return an error (`100` / `200`).
+   - Do the same the other way: prod's token must not read the test number's ID.
 
 ### D2. Production env (VM `~/smilecare-n8n/.env`)
 Add the following, then recreate the container with
@@ -458,8 +493,22 @@ Add the following, then recreate the container with
 `.env` first):
 
 ```ini
+WHATSAPP_NUMBER_PROFILE=real
 WHATSAPP_PHONE_NUMBER_ID=<REAL_PHONE_NUMBER_ID>
 WHATSAPP_ALLOWED_PHONE_NUMBER_IDS=<REAL_PHONE_NUMBER_ID>
+```
+
+These live in the VM's `.env`, which `docker-compose.prod.yml` loads on every `up -d`, so they
+survive redeploys and image upgrades. Credentials and workflows live in the `n8n_data` volume.
+Never run `start-n8n-whatsapp.sh` on the VM; it writes the local profile and a tunnel URL.
+
+Check the profile after every change. It is read-only, and it fails on a test number or an
+empty allowlist:
+
+```bash
+cd ~/smilecare-n8n && set -a && . ./.env && set +a
+read -rsp 'prod token: ' WHATSAPP_ACCESS_TOKEN && export WHATSAPP_ACCESS_TOKEN && echo
+python3 scripts/verify-whatsapp-token.py --no-send   # expect "Profile real: … OK"
 ```
 
 If you sync credentials with the script instead of the UI, also set
@@ -479,8 +528,21 @@ If you sync credentials with the script instead of the UI, also set
    - Access Token: `<PROD_TOKEN>`.
    - Business Account ID: `<REAL_WABA_ID>`.
    - Save.
-4. Import the updated agent JSON **into the open existing workflow** (`PRODUCTION_UPDATE.md`
-   C-2: ⋯ → Import from File, check the URL ID is unchanged) → **Save**.
+4. **Don't import the repo's agent JSON.** Since `11b4328` it is the CliniDesk gateway
+   version, with no WhatsApp Trigger. The VM still runs the older trigger workflow, which
+   sends from a hardcoded test number. Make these three edits in the open workflow instead,
+   then **Save**:
+   - *Normalize WhatsApp Message*: add a string field `phone_number_id` =
+     `{{ $json.metadata?.phone_number_id ?? '' }}`.
+   - Insert an **If** node **Allowed Business Number?** between *Normalize WhatsApp Message*
+     and *Detect Message Type*. Connect only the true output. Use a boolean "is true"
+     condition on this expression:
+     `{{ ($env.WHATSAPP_ALLOWED_PHONE_NUMBER_IDS || '').split(',').map(s => s.trim()).filter(Boolean).includes($json.phone_number_id) }}`
+     It fails closed: if the env var is missing, nothing is answered (local's older
+     expression answered every number).
+   - *Send WhatsApp Reply → Phone Number ID*:
+     `{{ $('Normalize WhatsApp Message').item.json.phone_number_id || $env.WHATSAPP_PHONE_NUMBER_ID }}`
+     The hardcoded test ID must be gone.
 5. Re-check *Dental Clinic Config* and the tool IDs, as listed in C-2.
 6. Optional: import or update `Send Notification` the same way, if the dashboard uses it in
    production.
@@ -488,15 +550,21 @@ If you sync credentials with the script instead of the UI, also set
 ### D4. Cutover order (avoids double replies and gaps)
 Do these steps one at a time.
 
-1. **Local stops answering the real number.**
+1. **Local stops answering the real number.** *(Done 2026-10-25. Local is on the test
+   profile, and a signed fake webhook for another number stopped at the guard.)*
    - Set local `WHATSAPP_ALLOWED_PHONE_NUMBER_IDS=1296266210241103` and
      `WHATSAPP_PHONE_NUMBER_ID=1296266210241103`.
    - Set `WHATSAPP_BUSINESS_ACCOUNT_ID` back to `1628386515555176`.
    - Run B3.
-2. **Unsubscribe the local app from the real WABA**, using the **local** token:
+2. **Unsubscribe the local app from the real WABA**, using the **local** token. You can do
+   this any time after step 1: local already drops the real number's messages, but they
+   still reach the laptop until this runs. It sends nothing. Undo it with the same URL and
+   `-X POST`.
 
    ```bash
    curl -s -X DELETE "$GRAPH/<REAL_WABA_ID>/subscribed_apps" -H "Authorization: Bearer $TOKEN"
+   curl -s "$GRAPH/<REAL_WABA_ID>/subscribed_apps" -H "Authorization: Bearer $TOKEN"
+   # expect only "Appointment Syatem" (1755…), not "Appointment Syatem Local" (1452…)
    ```
 
 3. **Production publishes.** On the VM, open the agent → **Publish**. n8n registers the DuckDNS

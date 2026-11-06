@@ -7,7 +7,12 @@
 Values come from the process env first, then .env / .env.docker:
     WHATSAPP_ACCESS_TOKEN, WHATSAPP_PHONE_NUMBER_ID (sender),
     WHATSAPP_BUSINESS_ACCOUNT_ID (optional, health check),
-    WHATSAPP_TEST_RECIPIENT (patient-side number, required only for the send test).
+    WHATSAPP_TEST_RECIPIENT (patient-side number, required only for the send test),
+    WHATSAPP_NUMBER_PROFILE + WHATSAPP_ALLOWED_PHONE_NUMBER_IDS (profile check).
+
+Profile check: with WHATSAPP_NUMBER_PROFILE=test (local) or =real (production), every
+number this instance answers or sends from must be that kind of number, or the script
+fails before it sends anything. Meta's test numbers are always +1 555 numbers.
 """
 
 from __future__ import annotations
@@ -15,6 +20,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -62,6 +68,40 @@ def post(url: str, token: str, body: dict) -> dict:
         return json.loads(resp.read().decode())
 
 
+def is_meta_test_number(display_phone_number: str) -> bool:
+    return re.sub(r"\D", "", display_phone_number).startswith("1555")
+
+
+def check_profile(profile: str, sender: str, allowed: list[str], token: str) -> bool:
+    """Local must only use Meta's test number and production only the real one."""
+    if profile not in ("test", "real"):
+        print(f"FAIL: WHATSAPP_NUMBER_PROFILE must be 'test' or 'real', not {profile!r}.")
+        return False
+    if not allowed:
+        print("FAIL: WHATSAPP_ALLOWED_PHONE_NUMBER_IDS is empty, so this instance would answer")
+        print("      every number subscribed to its Meta app. List this profile's number(s).")
+        return False
+    if sender not in allowed:
+        print(f"FAIL: WHATSAPP_PHONE_NUMBER_ID {sender} is not in WHATSAPP_ALLOWED_PHONE_NUMBER_IDS.")
+        return False
+
+    ok = True
+    for number_id in allowed:
+        try:
+            display = get(f"{GRAPH}/{number_id}?fields=display_phone_number", token).get("display_phone_number", "")
+        except urllib.error.URLError as exc:
+            print(f"FAIL: cannot read phone number id {number_id}: {exc}")
+            ok = False
+            continue
+        kind = "test" if is_meta_test_number(display) else "real"
+        if kind == profile:
+            print(f"Profile {profile}: {number_id} ({display}) OK")
+        else:
+            print(f"FAIL: {number_id} ({display}) is a {kind} number, but WHATSAPP_NUMBER_PROFILE={profile}.")
+            ok = False
+    return ok
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--no-send", action="store_true", help="read-only: skip the test message")
@@ -71,6 +111,8 @@ def main() -> int:
     phone_number_id = load_setting("WHATSAPP_PHONE_NUMBER_ID")
     waba_id = load_setting("WHATSAPP_BUSINESS_ACCOUNT_ID")
     recipient = load_setting("WHATSAPP_TEST_RECIPIENT")
+    profile = load_setting("WHATSAPP_NUMBER_PROFILE").lower()
+    allowed = [s.strip() for s in load_setting("WHATSAPP_ALLOWED_PHONE_NUMBER_IDS").split(",") if s.strip()]
 
     if not token:
         print("FAIL: WHATSAPP_ACCESS_TOKEN missing or still a placeholder.")
@@ -96,6 +138,12 @@ def main() -> int:
 
     if debug.get("type") == "USER":
         print("WARN: USER tokens expire in hours. Use a Meta Business System User token (Never expire).")
+
+    if profile:
+        if not check_profile(profile, phone_number_id, allowed, token):
+            return 1
+    else:
+        print("WARN: WHATSAPP_NUMBER_PROFILE not set — skipping the test/real number check.")
 
     fields = "display_phone_number,verified_name,name_status,code_verification_status,status,quality_rating,messaging_limit_tier,platform_type"
     try:

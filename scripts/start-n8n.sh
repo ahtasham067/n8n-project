@@ -241,6 +241,28 @@ sync_whatsapp_credential() {
   python3 "$ROOT/scripts/apply-whatsapp-auth.py"
 }
 
+check_whatsapp_profile() {
+  # Local n8n may only use Meta's test number; the real number belongs to
+  # production. Checks the values in .env.docker alone, not the caller's shell.
+  (
+    unset WHATSAPP_ACCESS_TOKEN WHATSAPP_PHONE_NUMBER_ID WHATSAPP_ALLOWED_PHONE_NUMBER_IDS \
+      WHATSAPP_BUSINESS_ACCOUNT_ID WHATSAPP_NUMBER_PROFILE
+    set -a
+    # shellcheck disable=SC1091
+    source .env.docker
+    set +a
+
+    if [[ -z "${WHATSAPP_ACCESS_TOKEN:-}" || "${WHATSAPP_ACCESS_TOKEN}" == your-* ]]; then
+      exit 0
+    fi
+    [[ "${WHATSAPP_NUMBER_PROFILE:-}" == test ]] \
+      || die "WHATSAPP_NUMBER_PROFILE must be \"test\" in .env.docker. Local n8n only uses Meta's test number; the real number belongs to production."
+    info "Checking that every WhatsApp number in .env.docker is a Meta test number..."
+    python3 "$ROOT/scripts/verify-whatsapp-token.py" --no-send \
+      || die "WhatsApp profile check failed (see above). Fix .env.docker and re-run; nothing was started."
+  )
+}
+
 verify_stack() {
   local tunnel_url="${1:-}"
 
@@ -298,6 +320,7 @@ verify_stack() {
 
 main() {
   ensure_env_file
+  check_whatsapp_profile
   ensure_docker
   ensure_port_available
   remove_misconfigured_n8n_container
