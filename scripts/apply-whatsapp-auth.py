@@ -7,6 +7,7 @@ import json
 import sqlite3
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 
@@ -66,6 +67,24 @@ def start_n8n() -> None:
     raise SystemExit("FAIL: n8n did not become healthy after credential update.")
 
 
+def drop_stale_wal() -> None:
+    """The database copied back already contains the old WAL. Delete that WAL in
+    the volume, or SQLite would replay it over the updated file on the next start."""
+    image = subprocess.run(
+        ["docker", "inspect", "n8n", "--format", "{{.Config.Image}}"],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    subprocess.run(
+        [
+            "docker", "run", "--rm", "--volumes-from", "n8n", "--entrypoint", "rm", image,
+            "-f", "/home/node/.n8n/database.sqlite-wal", "/home/node/.n8n/database.sqlite-shm",
+        ],
+        check=True,
+    )
+
+
 def update_credential(
     cur: sqlite3.Cursor,
     encryption_key: str,
@@ -117,40 +136,52 @@ def main() -> int:
 
     stop_n8n()
 
-    db_path = Path("/tmp/n8n-db.sqlite")
-    cfg_path = Path("/tmp/n8n-config.json")
-    subprocess.run(["docker", "cp", "n8n:/home/node/.n8n/database.sqlite", str(db_path)], check=True)
-    subprocess.run(["docker", "cp", "n8n:/home/node/.n8n/config", str(cfg_path)], check=True)
-    encryption_key = json.loads(cfg_path.read_text())["encryptionKey"]
+    # Private temp dir: the copies hold every credential and the encryption key.
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "database.sqlite"
+        cfg_path = Path(tmp) / "config"
+        # n8n's latest writes can still be in the WAL after it stops, so copy it
+        # too. Without it this would edit, and put back, a stale database.
+        for suffix in ("", "-wal", "-shm"):
+            subprocess.run(
+                ["docker", "cp", f"n8n:/home/node/.n8n/database.sqlite{suffix}", f"{db_path}{suffix}"],
+                check=not suffix,
+                capture_output=bool(suffix),
+            )
+        subprocess.run(["docker", "cp", "n8n:/home/node/.n8n/config", str(cfg_path)], check=True)
+        encryption_key = json.loads(cfg_path.read_text())["encryptionKey"]
 
-    conn = sqlite3.connect(db_path)
-    cur = conn.cursor()
-    updated = update_credential(
-        cur,
-        encryption_key,
-        "whatsAppApi",
-        {
-            "accessToken": token,
-            "businessAccountId": business_account_id,
-        },
-    )
-    if client_id and client_secret:
-        update_credential(
+        conn = sqlite3.connect(db_path)
+        cur = conn.cursor()
+        updated = update_credential(
             cur,
             encryption_key,
-            "whatsAppTriggerApi",
+            "whatsAppApi",
             {
-                "clientId": client_id,
-                "clientSecret": client_secret,
+                "accessToken": token,
+                "businessAccountId": business_account_id,
             },
         )
-    conn.commit()
-    conn.close()
+        if client_id and client_secret:
+            update_credential(
+                cur,
+                encryption_key,
+                "whatsAppTriggerApi",
+                {
+                    "clientId": client_id,
+                    "clientSecret": client_secret,
+                },
+            )
+        conn.commit()
+        # Fold the WAL into the file so the copy below is complete on its own.
+        conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        conn.close()
 
-    if not updated:
-        return 1
+        if not updated:
+            return 1
 
-    subprocess.run(["docker", "cp", str(db_path), "n8n:/home/node/.n8n/database.sqlite"], check=True)
+        subprocess.run(["docker", "cp", str(db_path), "n8n:/home/node/.n8n/database.sqlite"], check=True)
+    drop_stale_wal()
     print("Credentials synced from .env.docker into n8n database.")
     start_n8n()
     print("n8n restarted. Credential fields are visible under n8n → Credentials.")

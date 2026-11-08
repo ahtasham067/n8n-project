@@ -39,6 +39,14 @@ done < <(grep -vE '^[[:space:]]*(#|$)' "$HERE/workflows.txt")
 
 container_running || die "n8n ($CONTAINER) is not running. Start it, then deploy."
 
+# Production never runs on Meta's test number. Check what the container really has.
+profile="$(docker exec "$CONTAINER" printenv WHATSAPP_NUMBER_PROFILE 2>/dev/null || true)"
+case "$profile" in
+  real) ;;
+  "") log "WARNING: WHATSAPP_NUMBER_PROFILE is not set on $CONTAINER; set it to real in $APP_DIR/.env" ;;
+  *) die "WHATSAPP_NUMBER_PROFILE is \"$profile\" on $CONTAINER. Production must use real." ;;
+esac
+
 BACKUP_ID="$(date -u +%Y%m%dT%H%M%SZ)-${SHA:0:7}"
 BK="$BACKUP_ROOT/$BACKUP_ID"
 mkdir -p "$BK"

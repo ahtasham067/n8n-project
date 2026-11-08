@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Test SmileCare appointment tools against Supabase (post loop-fix)."""
+import os
 import json
 import subprocess
 import sys
@@ -14,7 +15,9 @@ KEY = (
 )
 BASE = "http://127.0.0.1:54321/rest/v1"
 HDR = {"apikey": KEY, "Authorization": f"Bearer {KEY}", "Content-Type": "application/json"}
-PHONE = "923025889452"
+PHONE = os.environ.get("E2E_TEST_PHONE", "").strip()
+if not PHONE:
+    raise SystemExit("Set E2E_TEST_PHONE to the test patient's number (digits, no +).")
 DATE = "2026-08-25"
 DOC = "DOC-003"
 PATIENT = "Ahtasham Naeem"

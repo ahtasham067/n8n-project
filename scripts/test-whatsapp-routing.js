@@ -345,6 +345,31 @@ check(
   'legacy Send Notification does not use WHATSAPP_PHONE_NUMBER_ID',
 );
 
+{
+  // Run the node's real code: only an allowlisted sender may go on to the send.
+  const validate = (env) =>
+    new Function('$input', '$env', node(notify, 'Validate Request').parameters.jsCode)(
+      { first: () => ({ json: { headers: { 'x-notify-secret': 's' }, body: { phone: '1', message: 'hi' } } }) },
+      { N8N_NOTIFY_SHARED_SECRET: 's', ...env },
+    )[0].json;
+  const secret = { WHATSAPP_PHONE_NUMBER_ID: 'a', WHATSAPP_ALLOWED_PHONE_NUMBER_IDS: 'b, a' };
+  check(validate(secret).ok === true, 'Send Notification sends from an allowlisted number', 'Send Notification refused an allowlisted number');
+  check(
+    validate({ ...secret, WHATSAPP_ALLOWED_PHONE_NUMBER_IDS: 'b' }).status === 403 &&
+      validate({ ...secret, WHATSAPP_ALLOWED_PHONE_NUMBER_IDS: '' }).status === 403 &&
+      validate({ WHATSAPP_ALLOWED_PHONE_NUMBER_IDS: 'a' }).status === 403,
+    'Send Notification refuses a sender outside the allowlist, and fails closed when it is empty',
+    'Send Notification sends from a number outside the allowlist',
+  );
+  check(
+    targets(notify, 'Validate Request').includes('Authorized?') &&
+      targets(notify, 'Authorized?').includes('Send WhatsApp Notification') &&
+      targets(notify, 'Authorized?', 1).includes('Respond Error'),
+    'a refused sender never reaches Send WhatsApp Notification',
+    'Send Notification can reach the send without passing Validate Request',
+  );
+}
+
 // --- Scheduler: the dashboard's frequent crons (Vercel Hobby runs them daily) ---
 const scheduler = read('CliniDesk Scheduler.json');
 const schedulerText = JSON.stringify(scheduler);
