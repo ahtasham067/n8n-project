@@ -20,3 +20,6 @@ config/credentials-overwrite.json
 __pycache__/
 .env.meta
 /brag-output
+
+# scripts/e2e-local-flow.mjs staging (credentials for the throwaway n8n)
+.e2e/
