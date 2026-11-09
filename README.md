@@ -42,6 +42,19 @@ curl -s "https://graph.facebook.com/v21.0/<REAL_PHONE_NUMBER_ID>?fields=id" -H "
 
 ### Test scripts
 
+`npm run test:e2e:local` runs WhatsApp booking, reschedule and cancel end to end on your machine:
+a signed (simulated) Meta webhook goes to the local dashboard, which forwards it to a throwaway n8n
+container running this repo's workflows; a scripted mock LLM makes the tool calls, and the script
+checks the appointment and the dashboard notifications (right clinic, doctor and action; none for
+another clinic), the bot replies, and that a clinic whose trial ended gets no AI reply.
+
+- Needs Docker, the dashboard's local Supabase and a dashboard build (`npm run build` there).
+- Uses only the Meta test number from `.env.docker` (`WHATSAPP_NUMBER_PROFILE=test`). Replies go
+  through the test number when its token works and `WHATSAPP_TEST_RECIPIENT` is set; otherwise
+  through a mock Graph (`E2E_GRAPH=mock` forces it). Tokens and numbers are never printed.
+- It never changes the Meta app's webhook URL or your own n8n container; the throwaway one is
+  removed at the end (`KEEP=1` keeps it).
+
 `scripts/test-appointment-lifecycle.py` and `scripts/verify-shared-supabase-e2e.py` need the test patient's number:
 
 ```bash

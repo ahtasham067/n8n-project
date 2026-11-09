@@ -370,7 +370,21 @@ check(
   );
 }
 
-// --- Scheduler: the dashboard's frequent crons (Vercel Hobby runs them daily) ---
+// --- Cancellations: every write is scoped to the clinic and the patient's number ---
+// The DB trigger turns the status change into the dashboard notification for
+// that clinic's staff, so the row must be the right clinic's and patient's.
+for (const file of ['Tool - Cancel Appointment.json', 'Tool - Cancel All Appointments.json']) {
+  const text = JSON.stringify(read(file));
+  const urls = text.match(/rest\/v1\/appointments\?[^`"\\]*/g) || [];
+  check(
+    urls.length > 0 &&
+      urls.every((u) => u.includes('clinic_id=eq.') && u.includes('phone_number=eq.')),
+    `${file}: every appointments query is scoped to clinic_id and phone_number`,
+    `${file}: an appointments query is missing clinic_id or phone_number: ${urls.find((u) => !(u.includes('clinic_id=eq.') && u.includes('phone_number=eq.')))}`,
+  );
+}
+
+// --- Scheduler: the dashboard's frequent crons and the daily billing job (Vercel Hobby runs crons daily) ---
 const scheduler = read('CliniDesk Scheduler.json');
 const schedulerText = JSON.stringify(scheduler);
 const every = node(scheduler, 'Every 15 Minutes');
@@ -394,6 +408,32 @@ check(
   ),
   'scheduler sends CLINIDESK_CRON_SECRET as a bearer token',
   'scheduler has no cron secret header',
+);
+// Daily: billing lifecycle and trial reminders (7, 3, 1 day(s) and the end day).
+const daily = node(scheduler, 'Daily 08:00 PKT');
+check(
+  daily?.type === 'n8n-nodes-base.scheduleTrigger' &&
+    daily.parameters.rule.interval[0].field === 'cronExpression' &&
+    daily.parameters.rule.interval[0].expression === '0 8 * * *' &&
+    scheduler.settings.timezone === 'Asia/Karachi',
+  'scheduler runs the billing job daily at 08:00 Pakistan time',
+  'scheduler has no daily 08:00 Asia/Karachi trigger',
+);
+const billingCall = node(scheduler, 'Run Billing and Trial Reminders');
+check(
+  targets(scheduler, 'Daily 08:00 PKT').includes('Run Billing and Trial Reminders') &&
+    billingCall.parameters.url === '={{ $env.CLINIDESK_GATEWAY_URL }}/api/cron/billing' &&
+    (billingCall.parameters.headerParameters?.parameters || []).some(
+      (h) => h.name === 'Authorization' && h.value === '=Bearer {{ $env.CLINIDESK_CRON_SECRET }}',
+    ) &&
+    billingCall.retryOnFail === true,
+  'scheduler calls /api/cron/billing daily with the cron secret, retrying on failure',
+  `scheduler billing call is ${billingCall?.parameters.url}`,
+);
+check(
+  !targets(scheduler, 'Every 15 Minutes').includes('Run Billing and Trial Reminders'),
+  'the billing job is not on the 15-minute trigger',
+  'the billing job runs every 15 minutes',
 );
 check(
   !/https?:\/\//.test(schedulerText) && !/\d{10,}/.test(schedulerText),

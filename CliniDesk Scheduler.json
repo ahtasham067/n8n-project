@@ -51,6 +51,56 @@
       "maxTries": 3,
       "waitBetweenTries": 5000,
       "notes": "GET /api/cron/platform-alerts on the dashboard with its CRON_SECRET. Each call also reaches Supabase, which keeps a Free project from pausing."
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 8 * * *"
+            }
+          ]
+        }
+      },
+      "id": "d750499d-9531-47d3-bc65-7b221c4bfacd",
+      "name": "Daily 08:00 PKT",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        220
+      ],
+      "notes": "Once a day (workflow timezone Asia/Karachi): billing lifecycle, renewal invoices and the trial reminders at 7, 3 and 1 day(s) before the end and on the end day. Vercel's daily cron is the fallback; billing_notices makes a second run send nothing."
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.CLINIDESK_GATEWAY_URL }}/api/cron/billing",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.CLINIDESK_CRON_SECRET }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 300000
+        }
+      },
+      "id": "68381384-cf81-497a-a60a-0cbe5902aef1",
+      "name": "Run Billing and Trial Reminders",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        240,
+        220
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "notes": "GET /api/cron/billing on the dashboard with its CRON_SECRET. Each reminder is sent once (billing_notices), so a retry or the Vercel fallback never sends it twice."
     }
   ],
   "connections": {
@@ -64,11 +114,23 @@
           }
         ]
       ]
+    },
+    "Daily 08:00 PKT": {
+      "main": [
+        [
+          {
+            "node": "Run Billing and Trial Reminders",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "settings": {
     "executionOrder": "v1",
-    "callerPolicy": "workflowsFromSameOwner"
+    "callerPolicy": "workflowsFromSameOwner",
+    "timezone": "Asia/Karachi"
   },
   "staticData": null,
   "pinData": {}

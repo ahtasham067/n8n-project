@@ -7,7 +7,8 @@
     "test": "node scripts/test-time-format.js && node scripts/test-language-matching.js && node scripts/test-whatsapp-routing.js",
     "test:time": "node scripts/test-time-format.js",
     "test:language": "node scripts/test-language-matching.js",
-    "test:whatsapp": "node scripts/test-whatsapp-routing.js"
+    "test:whatsapp": "node scripts/test-whatsapp-routing.js",
+    "test:e2e:local": "node scripts/e2e-local-flow.mjs"
   },
   "dependencies": {
     "luxon": "^3.7.2"
